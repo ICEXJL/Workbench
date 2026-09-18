@@ -1,0 +1,15 @@
+# Backend API
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+
+# Database
+SQLAlchemy>=2.0
+pymysql>=1.1
+pandas>=2.0
+
+# Authentication
+python-jose[cryptography]>=3.3
+
+# Utilities
+python-dotenv>=1.0

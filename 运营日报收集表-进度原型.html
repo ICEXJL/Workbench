@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>运营日报数据收集表 · 填写进度原型</title>
+<style>
+  :root{
+    --primary:#2f6fed; --primary-d:#1c4fb8; --accent:#eef4ff;
+    --text:#1a2332; --muted:#6b7a90; --line:#e3e9f2;
+    --ok:#1a9e63; --warn:#d97706; --bad:#dc2626;
+  }
+  *{box-sizing:border-box;font-family:"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;}
+  body{margin:0;color:var(--text);background:#f4f7fb;}
+  .pagehead{background:linear-gradient(135deg,#2f6fed 0%,#5b8def 55%,#8fb5f5 100%);color:#fff;padding:30px 32px 26px;}
+  .pagehead .kicker{font-size:12px;letter-spacing:2px;opacity:.88;}
+  .pagehead h1{margin:8px 0 6px;font-size:24px;font-weight:700;}
+  .pagehead .sub{font-size:14px;opacity:.92;}
+  .pagehead .chips{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;}
+  .chip{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);padding:4px 12px;border-radius:20px;font-size:12px;}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 20px 40px;display:grid;grid-template-columns:1fr 360px;gap:24px;align-items:start;}
+  .formcol{background:#fff;border:1px solid var(--line);border-radius:14px;padding:24px 26px;}
+  .grp{margin-bottom:22px;}
+  .grp h3{margin:0 0 4px;font-size:15px;color:var(--primary-d);border-left:4px solid var(--primary);padding-left:10px;}
+  .grp .hint{font-size:12px;color:var(--muted);margin:2px 0 10px 14px;}
+  .f{margin-bottom:14px;}
+  .f label{display:flex;align-items:baseline;gap:6px;font-size:14px;margin-bottom:6px;}
+  .f .req{color:var(--bad);}
+  .f .tag2{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 6px;margin-left:auto;}
+  input[type=text],input[type=number]{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;outline:none;transition:.15s;}
+  input:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--accent);}
+  .radio-group{display:flex;gap:18px;padding:6px 2px;}
+  .radio-group label{font-size:14px;cursor:pointer;align-items:center;margin:0;}
+  .radio-group input{width:auto;margin-right:6px;}
+  .submit{margin-top:8px;width:100%;background:var(--primary);color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:600;cursor:pointer;}
+  .submit:hover{background:var(--primary-d);}
+  .formdone{border:2px solid var(--ok);background:#eef9f2;text-align:center;padding:14px;border-radius:10px;color:var(--ok);font-weight:600;display:none;}
+
+  .panel{position:sticky;top:20px;display:flex;flex-direction:column;gap:18px;}
+  .progcard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 8px 24px rgba(31,73,144,.06);}
+  .progcard .pc-title{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+  .live-dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 rgba(26,158,99,.6);animation:pulse 1.6s infinite;}
+  @keyframes pulse{70%{box-shadow:0 0 0 8px rgba(26,158,99,0);}100%{box-shadow:0 0 0 0 rgba(26,158,99,0);}}
+  .pct-row{display:flex;align-items:flex-end;justify-content:space-between;margin:8px 0 2px;}
+  .pct-big{font-size:44px;font-weight:800;line-height:1;color:var(--text);}
+  .pct-big .unit{font-size:20px;}
+  .status{font-size:13px;padding:4px 12px;border-radius:20px;font-weight:600;}
+  .status.ok{background:#e6f6ee;color:var(--ok);}
+  .status.on{background:var(--accent);color:var(--primary-d);}
+  .status.lag{background:#fff4e5;color:#b45309;}
+  .bar{height:14px;background:#e7edf6;border-radius:8px;overflow:hidden;margin:10px 0 14px;position:relative;}
+  .bar i{display:block;height:100%;border-radius:8px;transition:width .35s ease, background .35s ease;}
+  .bar.b-ok i{background:linear-gradient(90deg,#1a9e63,#4dc48c);}
+  .bar.b-on i{background:linear-gradient(90deg,#2f6fed,#5b8def);}
+  .bar.b-lag i{background:linear-gradient(90deg,#d97706,#f2a04a);}
+  .bar .tick{position:absolute;top:-3px;bottom:-3px;width:2px;background:#2f6fed;opacity:.55;}
+  .kv{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px dashed var(--line);}
+  .kv .k{color:var(--muted);}
+  .kv .v{font-weight:600;}
+  .kv .v.neg{color:var(--bad);}
+  .kv .v.pos{color:var(--ok);}
+  .target-edit{margin-top:10px;display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);}
+  .target-edit input{width:150px;padding:7px 10px;border:1px solid var(--line);border-radius:7px;font-size:13px;outline:none;}
+  .target-edit input:focus{border-color:var(--primary);}
+
+  .fillcard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px;}
+  .fillcard .fc-title{font-size:14px;font-weight:600;margin-bottom:10px;display:flex;justify-content:space-between;}
+  .fillcard .fc-title .cnt{color:var(--primary-d);}
+  .filldots{display:flex;flex-wrap:wrap;gap:7px;}
+  .dot{width:30px;height:30px;border-radius:50%;background:#eef2f8;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);border:1px solid var(--line);transition:.2s;}
+  .dot.done{background:#e6f6ee;color:var(--ok);border-color:#bfe8d2;font-weight:700;}
+  .fill-minibar{height:9px;background:#e7edf6;border-radius:6px;overflow:hidden;margin-top:12px;}
+  .fill-minibar i{display:block;height:100%;background:linear-gradient(90deg,#2f6fed,#5b8def);border-radius:6px;transition:width .3s;}
+  .hint-box{background:var(--accent);border:1px solid #d7e5ff;border-radius:10px;padding:12px 14px;font-size:12px;color:#34507e;line-height:1.7;}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr;} .panel{position:static;}}
+</style>
+</head>
+<body>
+<div class="pagehead">
+  <div class="kicker">OPERATIONS DAILY REPORT</div>
+  <h1>运营日报数据收集表</h1>
+  
+  <div class="chips"><span class="chip">共 13 项</span><span class="chip">必填 10 项</span><span class="chip">周二字段 3 项</span></div>
+</div>
+
+<div class="wrap">
+  <!-- 左侧：表单 -->
+  <div class="formcol">
+    <div class="grp">
+      <h3>基本信息</h3>
+      <div class="f">
+        <label><span class="req">*</span>姓名</label>
+        <input type="text" class="js-field" data-name="姓名" placeholder="请输入本人姓名">
+      </div>
+    </div>
+
+    <div class="grp">
+      <h3>销售与上架</h3>
+      <div class="f">
+        <label><span class="req">*</span>累计销售额 <span class="tag2">保留 2 位小数</span></label>
+        <input type="number" id="sales" class="js-field money" data-name="累计销售额" step="0.01" min="0" placeholder="请输入金额">
+      </div>
+      <div class="f">
+        <label><span class="req">*</span>实际上架数量 <span class="tag2">整数</span></label>
+        <input type="number" class="js-field int" data-name="实际上架数量" step="1" min="0" placeholder="请输入整数">
+      </div>
+      <div class="f">
+        <label><span class="req">*</span>产品优化数量 <span class="tag2">整数</span></label>
+        <input type="number" class="js-field int" data-name="产品优化数量" step="1" min="0" placeholder="请输入整数">
+      </div>
+    </div>
+
+    <div class="grp">
+      <h3>合规检查</h3>
+      <div class="f">
+        <label>是否周延迟率超标/周取消率超标 <span class="tag2">周二填</span></label>
+        <div class="radio-group">
+          <label><input type="radio" name="f5" value="是" class="js-field" data-name="周延迟率超标"><span>是</span></label>
+          <label><input type="radio" name="f5" value="否" class="js-field" data-name="周延迟率超标"><span>否</span></label>
+        </div>
+      </div>
+      <div class="f">
+        <label><span class="req">*</span>是否触发违规/扣分</label>
+        <div class="radio-group">
+          <label><input type="radio" name="f6" value="是" class="js-field" data-name="是否触发违规"><span>是</span></label>
+          <label><input type="radio" name="f6" value="否" class="js-field" data-name="是否触发违规"><span>否</span></label>
+        </div>
+      </div>
+      <div class="f">
+        <label><span class="req">*</span>是否链接侵权/禁售</label>
+        <div class="radio-group">
+          <label><input type="radio" name="f7" value="是" class="js-field" data-name="是否链接侵权"><span>是</span></label>
+          <label><input type="radio" name="f7" value="否" class="js-field" data-name="是否链接侵权"><span>否</span></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <h3>周度项</h3>
+      <div class="f">
+        <label>周商责差评数 3 个及以上的链接数 <span class="tag2">周二填 · 整数</span></label>
+        <input type="number" class="js-field int" data-name="周商责差评链接数" step="1" min="0" placeholder="请输入整数">
+      </div>
+      <div class="f">
+        <label>周错发/破损数 3 个及以上的链接数 <span class="tag2">周二填 · 整数</span></label>
+        <input type="number" class="js-field int" data-name="周错发破损链接数" step="1" min="0" placeholder="请输入整数">
+      </div>
+    </div>
+
+    <div class="grp">
+      <h3>质量与审核</h3>
+      <div class="f">
+        <label><span class="req">*</span>备货审核及时率 <span class="tag2">百分比</span></label>
+        <input type="number" class="js-field int" data-name="备货审核及时率" step="1" min="0" max="100" placeholder="请输入百分比，如 98">
+      </div>
+      <div class="f">
+        <label><span class="req">*</span>产品反推数量 <span class="tag2">整数</span></label>
+        <input type="number" class="js-field int" data-name="产品反推数量" step="1" min="0" placeholder="请输入整数">
+      </div>
+    </div>
+
+    <div class="grp">
+      <h3>每日健康度</h3>
+      <div class="f">
+        <label><span class="req">*</span>销售额对比前一天上下浮动 20% 的店铺数 <span class="tag2">整数</span></label>
+        <input type="number" class="js-field int" data-name="浮动20%店铺数" step="1" min="0" placeholder="请输入整数">
+      </div>
+      <div class="f">
+        <label><span class="req">*</span>当天问题是否都解决</label>
+        <div class="radio-group">
+          <label><input type="radio" name="f13" value="是" class="js-field" data-name="当天问题都解决"><span>是</span></label>
+          <label><input type="radio" name="f13" value="否" class="js-field" data-name="当天问题都解决"><span>否</span></label>
+        </div>
+      </div>
+    </div>
+
+    <button class="submit" onclick="doSubmit()">提交日报</button>
+    <div id="formDone" class="formdone">提交成功，感谢填写！本页面为静态原型，不会真正上报。</div>
+  </div>
+
+  <!-- 右侧：实时进度面板 -->
+  <div class="panel">
+    <div class="progcard">
+      <div class="pc-title"><span class="live-dot"></span>本月销售进度 <span style="margin-left:auto;font-size:11px;">实时联动</span></div>
+      <div class="pct-row">
+        <div class="pct-big"><span id="pctVal">0</span><span class="unit">%</span></div>
+        <span class="status" id="statusChip">未设置目标</span>
+      </div>
+      <div class="bar" id="bar">
+        <i id="barFill" style="width:0%"></i>
+        <span class="tick" id="timeTick" style="left:0%" title="时间进度"></span>
+      </div>
+      <div class="kv"><span class="k">本月目标销售额</span><span class="v" id="kvTarget">¥ 0</span></div>
+      <div class="kv"><span class="k">当前累计销售额</span><span class="v" id="kvSales">¥ 0</span></div>
+      <div class="kv"><span class="k">距目标缺口</span><span class="v neg" id="kvGap">¥ 0</span></div>
+      <div class="kv"><span class="k">当月时间进度</span><span class="v" id="kvTime">0%</span></div>
+      <div class="target-edit">
+        设置本月目标
+        <input type="number" id="targetInput" value="1000000" step="10000" min="0" title="输入目标销售额">
+      </div>
+      <div class="hint-box" style="margin-top:12px;">说明：填入左侧「累计销售额」等字段，本面板立即更新进度百分比与达成状态。目标可在右侧直接修改。</div>
+    </div>
+
+    <div class="fillcard">
+      <div class="fc-title">填写完整度 <span class="cnt" id="fillCount">0 / 10</span></div>
+      <div class="filldots" id="fillDots"></div>
+      <div class="fill-minibar"><i id="fillBar" style="width:0%"></i></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // —— 填写项定义（10 个必填项驱动完整度；销售进度由累计销售额驱动）——
+  const requiredNames = ["姓名","累计销售额","实际上架数量","产品优化数量","是否触发违规","是否链接侵权","备货审核及时率","产品反推数量","浮动20%店铺数","当天问题都解决"];
+  const fieldStates = {}; // name -> filled(bool)
+  requiredNames.forEach(n=>fieldStates[n]=false);
+  document.addEventListener('input', function(e){
+    const el = e.target;
+    if(!el.classList || !el.classList.contains('js-field')) return;
+    const name = el.dataset.name;
+    const val = (el.type==='radio') ? (el.checked ? el.value : '') : el.value;
+    if(requiredNames.includes(name)){
+      fieldStates[name] = (el.type==='radio') ? el.checked : (/[^\s]/.test(val));
+      updateFill();
+    }
+    renderProgress();
+  });
+  document.addEventListener('change', function(e){
+    const el=e.target; if(!el.classList || !el.classList.contains('js-field')) return;
+    renderProgress();
+  });
+
+  // —— 进度计算 ——
+  const salesInput = document.getElementById('sales');
+  const targetInput = document.getElementById('targetInput');
+  targetInput.addEventListener('input', renderProgress);
+
+  function todayFrac(){
+    const now=new Date();
+    const d=new Date(now.getFullYear(),now.getMonth(),1);
+    const total=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+    const past=Math.round(now.getDate()/total*1000)/10;
+    return {past,total};
+  }
+
+  function renderProgress(){
+    const target=parseFloat(targetInput.value)||0;
+    const salesRaw=parseFloat(salesInput.value); // 累计销售额字段
+    const sales=isFinite(salesRaw)&&salesRaw>=0?salesRaw:0;
+    const {past}=todayFrac();
+    const pct = target>0 ? Math.round(sales/target*1000)/10 : null;
+    const pctInt = pct!=null?Math.min(pct,999):0;
+    const gap=Math.max(target-sales,0);
+
+    document.getElementById('pctVal').textContent = pct!=null?pct.toLocaleString('zh-CN'):'--';
+    document.getElementById('barFill').style.width = Math.min(pctInt,100)+'%';
+    document.getElementById('timeTick').style.left = Math.min(past,100)+'%';
+    document.getElementById('kvTarget').textContent='¥ '+fmt(target);
+    document.getElementById('kvSales').textContent='¥ '+fmt(sales);
+    document.getElementById('kvGap').textContent='¥ '+fmt(gap);
+    const tfrac=new Date().getDate()/new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate();
+    document.getElementById('kvTime').textContent=Math.round(tfrac*100)+'%';
+
+    const bar=document.getElementById('bar'), chip=document.getElementById('statusChip');
+    bar.className='bar';
+    if(pct==null){ chip.textContent='未设置目标'; chip.className='status'; bar.classList.add('b-on'); return; }
+    const timePct=tfrac*100;
+    if(pct>=100){ chip.textContent='已超额完成'; chip.className='status ok'; bar.classList.add('b-ok'); }
+    else if(pct>=timePct){ chip.textContent='达标中'; chip.className='status on'; bar.classList.add('b-on'); }
+    else { chip.textContent='进度落后'; chip.className='status lag'; bar.classList.add('b-lag'); }
+  }
+
+  function fmt(n){ return Math.round(n*100)/100 .toString().replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+
+  // —— 填写完整度 ——
+  function updateFill(){
+    const done=requiredNames.filter(n=>fieldStates[n]).length;
+    document.getElementById('fillCount').textContent=done+' / '+requiredNames.length;
+    document.getElementById('fillBar').style.width=(done/requiredNames.length*100)+'%';
+    const dots=document.getElementById('fillDots');
+    dots.innerHTML='';
+    requiredNames.forEach((n,i)=>{
+      const d=document.createElement('div');
+      d.className='dot'+(fieldStates[n]?' done':'');
+      d.textContent=i+1;
+      d.title=n+(fieldStates[n]?'（已填）':'（未填）');
+      dots.appendChild(d);
+    });
+  }
+
+  function doSubmit(){
+    const done=requiredNames.filter(n=>fieldStates[n]).length;
+    if(done<requiredNames.length){
+      alert('还有 '+(requiredNames.length-done)+' 个必填项未填写：'+requiredNames.filter(n=>!fieldStates[n]).join('、'));
+      return;
+    }
+    document.getElementById('formDone').style.display='block';
+  }
+
+  updateFill(); renderProgress();
+</script>
+</body>
+</html>
