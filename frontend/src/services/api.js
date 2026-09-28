@@ -5,6 +5,10 @@ export function login(data) {
   return request.post('/auth/login', data)
 }
 
+export function changePassword(data) {
+  return request.post('/auth/change-password', data)
+}
+
 // ---- 每日销售 ----
 export function getDailySales(params) {
   return request.get('/sales/daily', { params })
@@ -53,6 +57,10 @@ export function getDailyReports(params) {
 
 export function getReportPeople() {
   return request.get('/report/people')
+}
+
+export function getComplianceOverview(params) {
+  return request.get('/report/compliance', { params })
 }
 
 export function saveMonthlyTarget(data) {

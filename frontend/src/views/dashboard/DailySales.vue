@@ -12,9 +12,9 @@
 
     <section class="metric-grid" aria-label="核心指标">
       <article class="metric primary"><span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16l-1 13H5L4 7ZM8 7a4 4 0 0 1 8 0" /></svg></span><div><p>订单总量</p><strong>{{ formatInteger(summary.orders) }}</strong><small>当前筛选范围</small></div></article>
-      <article class="metric"><span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16M6 16l4-5 3 3 5-8" /></svg></span><div><p>销售额</p><strong>¥ {{ formatMoney(summary.sales) }}</strong><small>人民币口径</small></div></article>
+      <article class="metric"><span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 19h16M6 16l4-5 3 3 5-8" /></svg></span><div><p>销售额（USD）</p><strong>$ {{ formatMoney(summary.sales) }}</strong><small>美元口径</small></div></article>
       <article class="metric"><span class="metric-icon"><svg viewBox="0 0 24 24"><path d="M4 10h16v10H4V10ZM7 10V6h10v4M8 15h8" /></svg></span><div><p>活跃店铺</p><strong>{{ summary.stores }}</strong><small>有销售记录店铺</small></div></article>
-      <article class="metric"><span class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2" /></svg></span><div><p>平均客单</p><strong>¥ {{ formatMoney(summary.aov) }}</strong><small>销售额 / 订单量</small></div></article>
+      <article class="metric"><span class="metric-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2" /></svg></span><div><p>平均客单（USD）</p><strong>$ {{ formatMoney(summary.aov) }}</strong><small>美元销售额 / 订单量</small></div></article>
     </section>
 
     <section class="data-panel">
@@ -24,7 +24,7 @@
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'dpbh'"><span class="store-cell"><i :class="platformClass(record.dpbh)"></i>{{ record.dpbh }}</span></template>
           <template v-else-if="column.key === 'dds'"><strong class="number-cell">{{ formatInteger(record.dds) }}</strong></template>
-          <template v-else-if="column.key === 'xse'"><strong class="sales-cell">¥ {{ formatMoney(record.xse) }}</strong></template>
+          <template v-else-if="column.key === 'xse'"><strong class="sales-cell">$ {{ formatMoney(record.xse) }}</strong></template>
           <template v-else-if="column.key === 'ckh'"><span class="warehouse-tag">{{ record.ckh || '未配置' }}</span></template>
         </template>
       </a-table>
@@ -45,7 +45,7 @@ const pagination=computed(()=>({current:page.value,pageSize:pageSize.value,total
 const columns=[
   {title:'店铺代号',dataIndex:'dpbh',key:'dpbh',width:260},
   {title:'订单量',dataIndex:'dds',key:'dds',width:120},
-  {title:'销售额',dataIndex:'xse',key:'xse',width:150},
+  {title:'销售额（USD）',dataIndex:'xse',key:'xse',width:150},
   {title:'仓库',dataIndex:'ckh',key:'ckh',width:120},{title:'日期',dataIndex:'rq',key:'rq',width:130},
 ]
 const formatInteger=(value)=>new Intl.NumberFormat('zh-CN',{maximumFractionDigits:0}).format(Number(value||0))

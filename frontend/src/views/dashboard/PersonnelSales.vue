@@ -91,7 +91,7 @@ const columns = computed(() => {
       title: h,
       children: [
         { title: '订单数', dataIndex: `dd${n}`, key: `dd${n}`, width: 90 },
-        { title: '销售额', dataIndex: `xs${n}`, key: `xs${n}`, width: 100 },
+        { title: '销售额（USD）', dataIndex: `xs${n}`, key: `xs${n}`, width: 110 },
       ],
     })
   })

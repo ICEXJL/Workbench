@@ -2,7 +2,9 @@
 
 前端只调 /backend/backend 的接口，不接触任何 SQL。
 """
-from database import run_query
+import bcrypt
+
+from database import run_execute, run_query
 
 ADMIN_USERS = {"boss", "boos", "xiangjinglv", "lichuxiong"}
 
@@ -10,6 +12,7 @@ ADMIN_USERS = {"boss", "boos", "xiangjinglv", "lichuxiong"}
 def resolve_identity(username: str) -> dict | None:
     rows = run_query(
         """SELECT d.username, o.id AS operator_id, o.real_name, o.role, o.status,
+                  d.must_change_password,
                   COALESCE(o.department, MAX(p.bm), MAX(p.fgs)) AS resolved_department
            FROM denglu d
            JOIN operator o ON o.id=d.operator_id
@@ -22,28 +25,92 @@ def resolve_identity(username: str) -> dict | None:
     if not rows or not rows[0].get("operator_id") or not rows[0].get("status"):
         return None
     row = rows[0]
-    return {"username": username, "userId": str(row["operator_id"]), "realName": row["real_name"], "role": row["role"], "department": row.get("resolved_department")}
+    return {
+        "username": username,
+        "userId": str(row["operator_id"]),
+        "realName": row["real_name"],
+        "role": row["role"],
+        "department": row.get("resolved_department"),
+        "mustChangePassword": bool(row.get("must_change_password")),
+    }
 
 
 # ==================== 登录 ====================
 def find_user(username: str, password: str) -> dict | None:
-    """查询 den字段表验证账号密码。返回用户行或 None(未找到)。"""
+    """查询账号并使用 bcrypt 哈希验证密码。"""
     rows = run_query(
-        "SELECT * FROM denglu WHERE username = :u AND password = :p",
-        {"u": username, "p": password},
+        "SELECT * FROM denglu WHERE username = :username LIMIT 1",
+        {"username": username},
     )
-    return rows[0] if rows else None
+    return rows[0] if rows and _password_matches(rows[0], password) else None
+
+
+def _password_matches(user: dict, password: str) -> bool:
+    password_hash = user.get("password_hash")
+    if not password_hash:
+        return False
+    try:
+        hash_bytes = (
+            password_hash
+            if isinstance(password_hash, bytes)
+            else str(password_hash).encode("utf-8")
+        )
+        return bcrypt.checkpw(password.encode("utf-8"), hash_bytes)
+    except (ValueError, TypeError):
+        return False
+
+
+def change_password(username: str, current_password: str, new_password: str) -> bool:
+    rows = run_query(
+        "SELECT username,password,password_hash "
+        "FROM denglu WHERE username=:username LIMIT 1",
+        {"username": username},
+    )
+    if not rows or not _password_matches(rows[0], current_password):
+        return False
+
+    password_hash = bcrypt.hashpw(
+        new_password.encode("utf-8"),
+        bcrypt.gensalt(),
+    ).decode("utf-8")
+
+    return run_execute(
+        "UPDATE denglu SET password_hash=:password_hash, password='', must_change_password=0 "
+        "WHERE username=:username",
+        {"username": username, "password_hash": password_hash},
+    ) > 0
 
 
 def _scope_clause(user: dict, alias: str = "p") -> tuple[str, dict]:
     role, operator_id = user["role"], int(user["userId"])
+    own_names = """SELECT canonical.real_name
+        FROM operator canonical
+        WHERE canonical.id=:scope_id
+        UNION
+        SELECT legacy.real_name
+        FROM operator legacy
+        JOIN operator canonical ON canonical.id=:scope_id
+        WHERE legacy.status=0
+          AND legacy.real_name LIKE CONCAT(canonical.real_name, '\\_%')"""
     if role == "admin":
         return "", {}
     if role == "manager":
-        return f" AND {alias}.yy IN (SELECT o.real_name FROM org_hierarchy h JOIN operator o ON o.id=h.operator_id WHERE h.manager_id=:scope_id)", {"scope_id": operator_id}
+        return f""" AND {alias}.yy IN (
+            SELECT o.real_name
+            FROM org_hierarchy h JOIN operator o ON o.id=h.operator_id
+            WHERE h.manager_id=:scope_id AND o.status=1
+            UNION
+            {own_names}
+        )""", {"scope_id": operator_id}
     if role == "leader":
-        return f" AND {alias}.yy IN (SELECT o.real_name FROM org_hierarchy h JOIN operator o ON o.id=h.operator_id WHERE h.leader_id=:scope_id)", {"scope_id": operator_id}
-    return f" AND {alias}.yy=(SELECT real_name FROM operator WHERE id=:scope_id)", {"scope_id": operator_id}
+        return f""" AND {alias}.yy IN (
+            SELECT o.real_name
+            FROM org_hierarchy h JOIN operator o ON o.id=h.operator_id
+            WHERE h.leader_id=:scope_id AND o.status=1
+            UNION
+            {own_names}
+        )""", {"scope_id": operator_id}
+    return f" AND {alias}.yy IN ({own_names})", {"scope_id": operator_id}
 
 
 # ==================== 东南亚每日销售 ====================

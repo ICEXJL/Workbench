@@ -29,7 +29,7 @@ POOL_PRE_PING = True
 # ==================== 认证配置 ====================
 SECRET_KEY = os.getenv("SECRET_KEY", "please-change-this-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))  # 8 小时
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "43200"))  # 30 天
 
 # ==================== 服务启动配置 ====================
 HOST = os.getenv("HOST", "0.0.0.0")

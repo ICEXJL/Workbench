@@ -21,7 +21,13 @@ request.interceptors.response.use(
   (error) => {
     const status = error.response?.status
     const isNetworkError = !error.response
-    const detail = error.response?.data?.detail || (isNetworkError ? '数据服务未启动，请联系管理员或启动后端服务' : '请求失败，请稍后重试')
+    const rawDetail = error.response?.data?.detail
+    const detail = Array.isArray(rawDetail)
+      ? rawDetail.map((item) => {
+          const location = Array.isArray(item.loc) ? item.loc.filter((part) => part !== 'body').join('.') : ''
+          return location ? `${location}：${item.msg}` : item.msg
+        }).join('；')
+      : rawDetail || (isNetworkError ? '数据服务未启动，请联系管理员或启动后端服务' : '请求失败，请稍后重试')
 
     if (status === 401) {
       localStorage.removeItem('access_token')
@@ -34,7 +40,20 @@ request.interceptors.response.use(
       }
       message.error(typeof detail === 'string' ? detail : '登录已过期，请重新登录')
     } else if (status === 403) {
-      message.error(typeof detail === 'string' ? detail : '无权限访问该功能')
+      const detailCode = typeof detail === 'object' ? detail.code : ''
+      if (detailCode === 'PASSWORD_CHANGE_REQUIRED') {
+        const alreadyMarked = localStorage.getItem('must_change_password') === '1'
+        if (alreadyMarked) {
+          // The shell owns the blocking modal; keep the token so the user can submit the password change.
+        } else {
+          localStorage.setItem('must_change_password', '1')
+          localStorage.removeItem('access_token')
+          message.warning('请重新登录并完成首次密码修改')
+          if (router.currentRoute.value.path !== '/login') router.push('/login')
+        }
+      } else {
+        message.error(typeof detail === 'string' ? detail : '无权限访问该功能')
+      }
     } else if (isNetworkError) {
       message.error(detail)
     } else {

@@ -10,13 +10,17 @@ const props = defineProps({
   option: { type: Object, required: true },
   height: { type: Number, default: 480 },
 })
+const emit = defineEmits(['chart-click'])
 
 const chartRef = ref(null)
 let chart = null
 
 function render() {
   if (!chartRef.value) return
-  if (!chart) chart = echarts.init(chartRef.value)
+  if (!chart) {
+    chart = echarts.init(chartRef.value)
+    chart.on('click', params => emit('chart-click', params))
+  }
   chart.setOption(props.option, true)
 }
 
@@ -31,7 +35,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
-  chart && chart.dispose()
+  if (chart) {
+    chart.off('click')
+    chart.dispose()
+  }
 })
 
 watch(() => props.option, render, { deep: true })

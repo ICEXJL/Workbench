@@ -40,18 +40,38 @@ def run_execute(sql_str: str, params: dict | None = None) -> int:
 
 def init_business_tables() -> None:
     """Create the audit table; report tables already belong to the business schema."""
-    statements = [
-        """
-        CREATE TABLE IF NOT EXISTS operation_security_audit (
-            id BIGINT PRIMARY KEY AUTO_INCREMENT,
-            username VARCHAR(100) NULL,
-            action VARCHAR(100) NOT NULL,
-            detail VARCHAR(500) NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            KEY idx_audit_created_at (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        """,
-    ]
     with engine.begin() as conn:
-        for statement in statements:
-            conn.execute(text(statement))
+        column_exists = conn.execute(text("""SELECT COUNT(*)
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA=DATABASE()
+              AND TABLE_NAME='denglu'
+              AND COLUMN_NAME='must_change_password'""")).scalar_one()
+        if not column_exists:
+            conn.execute(text("""ALTER TABLE denglu
+                ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 1
+                AFTER operator_id"""))
+
+        for column, definition in (
+            ("rising_shop_count", "INT NOT NULL DEFAULT 0 AFTER fluctuate_shop_cnt"),
+            ("rising_shop_names", "TEXT NULL AFTER rising_shop_count"),
+            ("falling_shop_count", "INT NOT NULL DEFAULT 0 AFTER rising_shop_names"),
+            ("falling_shop_names", "TEXT NULL AFTER falling_shop_count"),
+        ):
+            report_column_exists = conn.execute(text("""SELECT COUNT(*)
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA=DATABASE()
+                  AND TABLE_NAME='daily_report'
+                  AND COLUMN_NAME=:column"""), {"column": column}).scalar_one()
+            if not report_column_exists:
+                conn.execute(text(f"ALTER TABLE daily_report ADD COLUMN {column} {definition}"))
+
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS operation_security_audit (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(100) NULL,
+                action VARCHAR(100) NOT NULL,
+                detail VARCHAR(500) NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_audit_created_at (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """))

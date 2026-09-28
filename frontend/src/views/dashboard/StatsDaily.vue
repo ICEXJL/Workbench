@@ -33,6 +33,7 @@ import { getRegionDistribution, getWarehouseDistribution } from '@/services/api'
 const loading = ref(true)
 const regionData = ref([])
 const whData = ref([])
+const columnTitle = (key) => key.includes('销售额') ? `${key}（USD）` : key
 
 const dateLabel = computed(() => dayjs().subtract(1, 'day').format('M月D日'))
 
@@ -41,18 +42,18 @@ const buildOption = (refData) => ({
   legend: { top: 0 },
   grid: { left: 60, right: 80, bottom: 40, top: 50 },
   xAxis: { type: 'category', data: refData.value.map(d => d['区域'] || d['仓库']) },
-  yAxis: [{ type: 'value', name: '订单量' }, { type: 'value', name: '销售额' }],
+    yAxis: [{ type: 'value', name: '订单量' }, { type: 'value', name: '销售额（USD）' }],
   series: [
     { name: '订单量', type: 'bar', data: refData.value.map(d => d['订单量']), itemStyle: { color: '#1F618D' } },
-    { name: '销售额', type: 'bar', data: refData.value.map(d => d['销售额']), itemStyle: { color: '#E67E22' }, yAxisIndex: 1 },
+    { name: '销售额（USD）', type: 'bar', data: refData.value.map(d => d['销售额']), itemStyle: { color: '#E67E22' }, yAxisIndex: 1 },
   ],
 })
 
 const regionOption = computed(() => buildOption(regionData))
 const whOption = computed(() => buildOption(whData))
 
-const regionColumns = computed(() => Object.keys(regionData.value[0] || {}).map((k) => ({ title: k, dataIndex: k, key: k })))
-const whColumns = computed(() => Object.keys(whData.value[0] || {}).map((k) => ({ title: k, dataIndex: k, key: k })))
+const regionColumns = computed(() => Object.keys(regionData.value[0] || {}).map((k) => ({ title: columnTitle(k), dataIndex: k, key: k })))
+const whColumns = computed(() => Object.keys(whData.value[0] || {}).map((k) => ({ title: columnTitle(k), dataIndex: k, key: k })))
 
 onMounted(async () => {
   try {
