@@ -11,3 +11,18 @@ frontend/.vite/
 ~$*.docx
 .DS_Store
 .trae-html-share-packages/
+
+# IDE 本地配置
+.idea/
+.vscode/
+
+# AI 助手本地运行数据
+.playwright-mcp/
+.workbuddy-ai/
+
+# 一次性操作备份（含账号名，不含密码，仅本地留档）
+.backup_password_clear.json
+
+# 本地验证产物
+verify-echarts-*.png
+frontend/dist-verify/
