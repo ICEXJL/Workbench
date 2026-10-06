@@ -6,37 +6,37 @@
 
 > **规模限制**：实测当前架构（单进程 uvicorn + 30 连接池）并发 QPS 上限约 20，**仅能稳定支撑 20–50 人同时在线**。500 人规模需先完成进程与限流改造，详见 [docs/性能评估-500人规模.md](docs/性能评估-500人规模.md)。
 >
-> **上线前必修**：登录限流的 IP 维度（30 次/600 秒）在同一办公网络下会误伤全公司 —— 实测单 IP 300 次尝试触发 274 个 429，全公司共用出口 IP 时会导致所有人被锁。
+> 登录限流 IP 维度已于 2026-10-06 **默认停用**（`LOGIN_IP_LIMIT_ENABLED=false`）—— 全公司共用办公网出口 IP 时会误伤正常用户。账号维度（5 次/300秒/锁 900 秒）仍生效，防暴力破解能力不受影响。
 
 > 目录名为 `project005_订单管理系统`，`backend/main.py` 的应用标题亦为「订单管理系统 API」，但代码与数据库中**不存在订单实体**：无订单表、无订单增删改接口、无订单状态机。详见 [specs/SPEC-012](specs/SPEC-012-经营数据工作台领域规格.md)。
 
 ## 当前交付范围
 
-| 模块 | 已实现 | 待解决 |
-| --- | --- | --- |
-| 登录与身份 | `denglu.operator_id` → `operator.id`；JWT 返回人员 ID、姓名、角色、部门；四角色菜单与路由 | 无 |
-| 登录安全 | bcrypt 密码校验（明文比对已移除）；登录限流；越权审计落库；`SECRET_KEY` 弱值启动校验 | 限流为单进程内存态，多实例部署需改Redis |
-| 经营总览 | 按日期/店铺查询，服务端分页、范围过滤、汇总指标；预取后两页 | 币种与退款/取消订单口径待业务确认 |
-| 人员销售 | 近 7 日按部门/组别/运营筛选、服务端分页、条件聚合；预取后两页 | 大区范围与店铺归属需业务抽样复核；深页查询与导出未实现 |
-| 运营日报 | 13 项分组填报、周二周度项、本人回填、同日覆盖更新、列表与明细 | 缺部门/店铺/状态筛选；缺越权详情接口 |
-| 月度目标 | 管理端按运营和月份新增或覆盖目标；填报页读取并实时计算完成率 | 列表与批量导入未实现；目标口径待业务核实 |
-| 趋势与分布 | 管理端页面；区域/平台趋势、区域/仓库分布、人员目录 | 人员目录为只读，非人员管理 |
+| 模块    | 已实现                                                                | 待解决                         |
+| ----- | ------------------------------------------------------------------ | --------------------------- |
+| 登录与身份 | `denglu.operator_id` → `operator.id`；JWT 返回人员 ID、姓名、角色、部门；四角色菜单与路由 | 无                           |
+| 登录安全  | bcrypt 密码校验（明文比对已移除）；登录限流（账号维度）；越权审计落库；`SECRET_KEY` 弱值启动校验               | IP 维度限流已停用（共用出口 IP 会误伤）；限流为单进程内存态，多实例需改 Redis      |
+| 经营总览  | 按日期/店铺查询，服务端分页、范围过滤、汇总指标；预取后两页                                     | 币种与退款/取消订单口径待业务确认           |
+| 人员销售  | 近 7 日按部门/组别/运营筛选、服务端分页、条件聚合；预取后两页                                  | 大区范围与店铺归属需业务抽样复核；深页查询与导出未实现 |
+| 运营日报  | 13 项分组填报、周二周度项、本人回填、同日覆盖更新、列表与明细                                   | 缺部门/店铺/状态筛选；缺越权详情接口         |
+| 月度目标  | 管理端按运营和月份新增或覆盖目标；填报页读取并实时计算完成率                                     | 列表与批量导入未实现；目标口径待业务核实        |
+| 趋势与分布 | 管理端页面；区域/平台趋势、区域/仓库分布、人员目录                                         | 人员目录为只读，非人员管理               |
 
 ## 已解决的历史问题
 
 以下是 2026-10-06 之前文档中标记为「未完成」的问题，现已闭环。逐项实测证据见 [tasks/2026-10-06-T13](tasks/2026-10-06-T13-前端ECharts按需引入与Git远程核实.md) 与 [tasks/2026-10-06-T12](tasks/2026-10-06-T12-四角色端到端验收.md)。
 
-| 历史问题 | 现状 | 证据 |
-| --- | --- | --- |
-| 明文密码比对仍在 | **已解决**。`services/sales_service.py` 仅走 `bcrypt.checkpw`；`denglu.password` 列220 行明文已清零，225 个账号哈希完好 | 全库仅 `$2b$12$` 哈希 |
-| 默认 JWT 密钥回退 | **已解决**。`config.py` 对空值、默认值、长度 < 32 三种弱值全部拒绝启动 | 三种弱密钥场景均拒绝启动 |
-| 登录限流缺失 | **已解决**。账号维度 5 次/300 秒/锁 900 秒；IP 维度 30 次/600 秒 | HTTP 实测第 6 次起 429 + 剩余秒数 |
-| 越权审计缺失 | **已解决**。`services/audit_service.py` 统一写 `operation_security_audit` | 审计表已落库 5 条 `deny_role_required` |
-| 统计/分布/人员目录接口未限管理端 | **已解决**。5 个接口挂 `require_roles("admin")` | leader 实测全 403，admin 仍 200 |
-| T12 四角色端到端未通过 | **接口层已通过**。leader/operator/admin 已验；manager 缺账号待补 | leader 28 店铺全部为 admin 子集、独有 0 |
-| `python-jose` 装不上 | **已解决**。清华镜像缺该包，需显式 `-i https://pypi.org/simple` | 属环境问题，见「环境注意事项」 |
-| 前端 chunk 超500 kB | **ECharts 部分已解决**。按需引入后 1,036.98 kB → 504.60 kB | `index-*.js` 仍 1,535.05 kB，见下文 |
-| `package.json` 缺 `dayjs` 声明 | **已解决**。6 个文件直接 import 却未声明，已补 | — |
+| 历史问题                        | 现状                                                                                                | 证据                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 明文密码比对仍在                    | **已解决**。`services/sales_service.py` 仅走 `bcrypt.checkpw`；`denglu.password` 列220 行明文已清零，225 个账号哈希完好 | 全库仅 `$2b$12$` 哈希                |
+| 默认 JWT 密钥回退                 | **已解决**。`config.py` 对空值、默认值、长度 < 32 三种弱值全部拒绝启动                                                    | 三种弱密钥场景均拒绝启动                    |
+| 登录限流缺失                      | **已解决**。账号维度 5 次/300 秒/锁 900 秒；IP 维度 30 次/600 秒                                                   | HTTP 实测第 6 次起 429 + 剩余秒数        |
+| 越权审计缺失                      | **已解决**。`services/audit_service.py` 统一写 `operation_security_audit`                                | 审计表已落库 5 条 `deny_role_required` |
+| 统计/分布/人员目录接口未限管理端           | **已解决**。5 个接口挂 `require_roles("admin")`                                                           | leader 实测全 403，admin 仍 200      |
+| T12 四角色端到端未通过               | **接口层已通过**。leader/operator/admin 已验；manager 缺账号待补                                                 | leader 28 店铺全部为 admin 子集、独有 0   |
+| `python-jose` 装不上           | **已解决**。清华镜像缺该包，需显式 `-i https://pypi.org/simple`                                                  | 属环境问题，见「环境注意事项」                 |
+| 前端 chunk 超500 kB            | **ECharts 部分已解决**。按需引入后 1,036.98 kB → 504.60 kB                                                   | `index-*.js` 仍 1,535.05 kB，见下文  |
+| `package.json` 缺 `dayjs` 声明 | **已解决**。6 个文件直接 import 却未声明，已补                                                                    | —                               |
 
 ## 技术结构
 
@@ -75,20 +75,20 @@ AGENTS.md            AI 开发入口
 
 所有业务接口挂载在 `/api/v1` 下。
 
-| 接口 | 方法 | 权限 |
-| --- | --- | --- |
-| `/auth/login` | POST | 公开（带限流） |
-| `/auth/change-password` | POST | 登录用户 |
-| `/auth/me` | GET | 登录用户 |
-| `/sales/daily` | GET | 按角色与店铺范围过滤 |
-| `/sales/personnel` | GET | 按角色范围过滤 |
-| `/sales/stats/regional`、`/sales/stats/platform` | GET | **仅 admin** |
-| `/sales/distribution/region`、`/sales/distribution/warehouse` | GET | **仅 admin** |
-| `/sales/management` | GET | **仅 admin** |
-| `/report/daily`、`/report/daily/mine` | GET/POST | 按可见范围；提交限非admin 本人当天 |
-| `/report/compliance` | GET | leader / manager / admin（operator 403） |
-| `/report/people` | GET | 登录用户（已按可见范围过滤） |
-| `/report/target` | GET/POST | 读取公开，写入限 admin |
+| 接口                                                           | 方法       | 权限                                     |
+| ------------------------------------------------------------ | -------- | -------------------------------------- |
+| `/auth/login`                                                | POST     | 公开（带限流）                                |
+| `/auth/change-password`                                      | POST     | 登录用户                                   |
+| `/auth/me`                                                   | GET      | 登录用户                                   |
+| `/sales/daily`                                               | GET      | 按角色与店铺范围过滤                             |
+| `/sales/personnel`                                           | GET      | 按角色范围过滤                                |
+| `/sales/stats/regional`、`/sales/stats/platform`              | GET      | **仅 admin**                            |
+| `/sales/distribution/region`、`/sales/distribution/warehouse` | GET      | **仅 admin**                            |
+| `/sales/management`                                          | GET      | **仅 admin**                            |
+| `/report/daily`、`/report/daily/mine`                         | GET/POST | 按可见范围；提交限非admin 本人当天                   |
+| `/report/compliance`                                         | GET      | leader / manager / admin（operator 403） |
+| `/report/people`                                             | GET      | 登录用户（已按可见范围过滤）                         |
+| `/report/target`                                             | GET/POST | 读取公开，写入限 admin                         |
 
 前端将当前页数据缓存于组件内并静默预取后两页；筛选变化时重新查询。预取不等于预先渲染全部 DOM，也不使无权限数据进入浏览器。
 
@@ -117,14 +117,14 @@ AGENTS.md            AI 开发入口
 
 ### P1 工程欠账
 
-6. **无 CI/CD** —— 无 `.github/workflows`，测试与构建全靠手工。
-7. **无数据库迁移/回滚脚本** —— 无 Alembic、无 `schema_migrations` 版本表。DDL 变更目前只能手工执行且无回滚路径，这是当前最大的运维风险。
-8. **无部署配置** —— 无 Dockerfile、docker-compose、Nginx 配置、进程管理配置。
-9. **无前端测试框架** —— 仅后端有测试（22 项），前端零自动化测试。
-10. **前端 chunk 仍偏大** —— `index-*.js` 1,535.05 kB（gzip 477.23 kB），根因是 Ant Design Vue 全量引入，需 `unplugin-vue-components` 按需引入；`EChart-*.js` 504.60 kB 仍略超500 kB 阈值。
-11. **限流为单进程内存态** —— 多实例部署时各进程计数不共享，需改用 Redis 等共享存储。**且 IP 维度阈值（30 次/600 秒）会误伤共用出口 IP 的全公司用户，属上线前必修项。**
-12. **前端构建告警** —— `[ant-design-vue: Table] index parameter of rowKey function is deprecated`，需改为稳定 rowKey。
-13. **并发能力不足** —— 单进程 uvicorn + 30 连接池，QPS 天花板约 20。500 人规模需加 `workers`、上调连接池、改 Redis 化限流，并压缩 3 个大响应体接口。
+1. **无 CI/CD** —— 无 `.github/workflows`，测试与构建全靠手工。
+2. **无数据库迁移/回滚脚本** —— 无 Alembic、无 `schema_migrations` 版本表。DDL 变更目前只能手工执行且无回滚路径，这是当前最大的运维风险。
+3. **无部署配置** —— 无 Dockerfile、docker-compose、Nginx 配置、进程管理配置。
+4. **无前端测试框架** —— 仅后端有测试（22 项），前端零自动化测试。
+5. **前端 chunk 仍偏大** —— `index-*.js` 1,535.05 kB（gzip 477.23 kB），根因是 Ant Design Vue 全量引入，需 `unplugin-vue-components` 按需引入；`EChart-*.js` 504.60 kB 仍略超500 kB 阈值。
+6. **限流为单进程内存态** —— 多实例部署时各进程计数不共享，需改用 Redis 等共享存储。IP 维度已于 2026-10-06 默认停用（`LOGIN_IP_LIMIT_ENABLED=false`），以避免共用出口 IP 时误伤全公司；账号维度（5 次/300 秒/锁 900 秒）仍生效。
+7. **前端构建告警** —— `[ant-design-vue: Table] index parameter of rowKey function is deprecated`，需改为稳定 rowKey。
+8. **并发能力不足** —— 单进程 uvicorn + 30 连接池，QPS 天花板约 20。500 人规模需加 `workers`、上调连接池、改 Redis 化限流，并压缩 3 个大响应体接口。
 
 ## 已知事故记录
 
@@ -142,4 +142,4 @@ origin  https://github.com/ICEXJL/Workbench.git
 
 ## 验收依据
 
-逐项状态见 [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md)、[specs/](specs/)、[tasks/](tasks/)，业务验收记录见 `开发TO DO验收清单-已核验-2026-09-22.docx`。
+逐项状态见 [DEVELOPMENT\_STATUS.md](DEVELOPMENT_STATUS.md)、[specs/](specs/)、[tasks/](tasks/)，业务验收记录见 `开发TO DO验收清单-已核验-2026-09-22.docx`。

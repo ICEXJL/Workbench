@@ -26,7 +26,7 @@
 | --- | --- | --- |
 | 明文密码比对 | 已解决 | 仅 `bcrypt.checkpw`；`denglu.password` 220 行明文清零 |
 | 弱默认密钥 | 已解决 | 三种弱值场景均拒绝启动 |
-| 登录限流 | 已解决 | 1–5 次 401，第 6 次起 429 + 剩余秒数 |
+| 登录限流 | 已解决（IP 维度已停用） | 账号维度 1–5 次 401、第 6 次起 429 + 剩余秒数；IP 维度因共用出口 IP 会误伤全公司，2026-10-06 起默认停用（`LOGIN_IP_LIMIT_ENABLED=false`） |
 | 越权审计 | 已解决 | `operation_security_audit` 落库 5 条 `deny_role_required` |
 | 管理端接口越权 | 已解决 | leader 全 403、admin 200（实测） |
 | 弱密钥校验 | 已解决 | 空/默认/短值三种场景全部拒启 |
@@ -43,8 +43,9 @@
 8. **无部署配置**（无 Dockerfile / compose / Nginx）。
 9. 无前端测试框架。
 10. `index-*.js` 1,535.05 kB 待按需引入 Ant Design；`EChart-*.js` 504.60 kB 略超阈值。
-11. 限流为单进程内存态，多实例需 Redis。
+11. 限流为单进程内存态，多实例需 Redis（IP 维度已停用，见安全 P0 表）。
 12. ant-design-vue `rowKey` index 弃用告警待修。
+13. 单进程并发 QPS 约 20，500 人规模需加 workers + 上调连接池。
 
 ## 测试现状
 
@@ -53,7 +54,7 @@
 | 文件 | 用例数 | 覆盖内容 |
 | --- | --- | --- |
 | `tests/test_daily_report_sales.py` | 13 | `dny_data` 自动取数、状态机、口径边界 |
-| `tests/test_login_security.py` | 8 | 限流锁定、IP 维度、计数清理回归 |
+| `tests/test_login_security.py` | 10 | 账号锁定、IP 维度停用状态与开关行为、计数清理回归 |
 | `tests/test_personnel_sales.py` | 1 | 人员销售聚合与排名 |
 
 运行：`cd backend && python -m unittest discover -s ../tests -p "test_*.py"`

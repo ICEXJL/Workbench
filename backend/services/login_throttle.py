@@ -1,9 +1,22 @@
-"""登录失败限流：按账号与来源 IP 双层防护。
+"""登录失败限流：按账号维度锁定，IP 维度默认停用。
 
 存储为进程内内存字典，不引入数据库表结构变更。多进程/多实例部署时
 每个进程各自持有计数，属于已知限制；如需全局一致应改为 Redis 等共享存储。
+
+## 为什么默认停用 IP 维度（2026-10-06）
+
+公司约 500 人共用同一办公网出口 IP。IP 维度阈值（10 分钟 30 次）对
+「全公司共用一个出口」的场景会误伤：任一员工输错密码都会消耗共享配额，
+随后所有人——包括完全没做错任何事的人——都会收到
+「登录尝试过于频繁，请稍后再试」。压测复现：单 IP 300 次登录尝试
+触发 274 个 429。
+
+账号维度（5 次/300 秒/锁 900 秒）已能防住针对单一账号的暴力破解，
+且不会影响他人，因此保留为默认防护。IP 维度改为**可选开关**：
+若将来需要防范批量枚举账号，可设环境变量 LOGIN_IP_LIMIT_ENABLED=true 重新启用。
 """
 
+import os
 import threading
 import time
 
@@ -12,7 +25,9 @@ ACCOUNT_MAX_FAILURES = 5
 ACCOUNT_WINDOW_SECONDS = 300
 ACCOUNT_LOCK_SECONDS = 900
 
-# IP 维度：10 分钟内最多 30 次登录尝试，防止批量枚举账号
+# IP 维度：默认停用。启用时为 10 分钟内最多 30 次登录尝试。
+# 启用前须确认部署环境的出口 IP 不是全公司共用，否则会误伤正常用户。
+IP_LIMIT_ENABLED = os.getenv("LOGIN_IP_LIMIT_ENABLED", "false").lower() in ("1", "true", "yes")
 IP_MAX_ATTEMPTS = 30
 IP_WINDOW_SECONDS = 600
 
@@ -46,8 +61,12 @@ def is_account_locked(username: str) -> int:
 
 
 def is_ip_blocked(ip: str) -> bool:
-    """该来源 IP 在窗口内是否已超过尝试上限。"""
-    if not ip:
+    """该来源 IP 在窗口内是否已超过尝试上限。
+
+    IP 维度默认停用（IP_LIMIT_ENABLED=False），此时恒返回 False，
+    不会产生任何拦截与计数开销。
+    """
+    if not IP_LIMIT_ENABLED or not ip:
         return False
     now = time.monotonic()
     with _lock:
@@ -57,8 +76,11 @@ def is_ip_blocked(ip: str) -> bool:
 
 
 def register_ip_attempt(ip: str) -> None:
-    """记录一次登录尝试（无论成功失败都计数）。"""
-    if not ip:
+    """记录一次登录尝试（无论成功失败都计数）。
+
+    IP 维度默认停用时直接返回，不产生任何状态。
+    """
+    if not IP_LIMIT_ENABLED or not ip:
         return
     now = time.monotonic()
     with _lock:

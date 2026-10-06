@@ -73,12 +73,17 @@ def get_current_user(
 @router.post("/login", response_model=schemas.TokenResponse)
 def login(request: Request, req: schemas.LoginRequest):
     username = req.username.strip()
-    client_ip = request.client.host if request.client else ""
 
-    login_throttle.register_ip_attempt(client_ip)
-    if login_throttle.is_ip_blocked(client_ip):
-        audit_service.record_event("login_blocked_ip", username, f"ip={client_ip}")
-        raise HTTPException(status_code=429, detail="登录尝试过于频繁，请稍后再试")
+    # IP 维度限流默认停用：全公司共用办公网出口 IP 时会误伤正常用户。
+    # 停用时连request.client 都不读取，也不写入任何 IP 状态。
+    if login_throttle.IP_LIMIT_ENABLED:
+        client_ip = request.client.host if request.client else ""
+        login_throttle.register_ip_attempt(client_ip)
+        if login_throttle.is_ip_blocked(client_ip):
+            audit_service.record_event("login_blocked_ip", username, f"ip={client_ip}")
+            raise HTTPException(status_code=429, detail="登录尝试过于频繁，请稍后再试")
+    else:
+        client_ip = ""
 
     remaining = login_throttle.is_account_locked(username)
     if remaining:
