@@ -45,7 +45,7 @@
 10. `index-*.js` 1,535.05 kB 待按需引入 Ant Design；`EChart-*.js` 504.60 kB 略超阈值。
 11. 限流为单进程内存态，多实例需 Redis（IP 维度已停用，见安全 P0 表）。
 12. ant-design-vue `rowKey` index 弃用告警待修。
-13. 单进程并发 QPS 约 20，500 人规模需加 workers + 上调连接池。
+13. 单进程并发 QPS 约 20，根因是数据库在公网（RTT 21 ms，单查询往返 57 ms）。实测加大连接池仅 +34%、加 workers 反而更慢，须靠数据库内网化 + Redis 缓存减少往返。
 
 ## 测试现状
 
