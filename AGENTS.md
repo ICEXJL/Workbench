@@ -17,7 +17,7 @@
 
 ### 当前阶段
 
-项目处于开发验收阶段，不应视为已完成的生产系统。README 和 2026-09-22 核验清单仍记录安全 P0、日报查看能力、后端统计接口权限和四角色端到端验收等未完成事项。当前仓库没有完整自动化测试、CI/CD、数据库迁移/回滚脚本或可提交的 Docker/反向代理配置。
+项目处于开发验收阶段，不应视为已完成的生产系统。**安全 P0 与权限 P0 已于 2026-10-06 落地并实测闭环**（bcrypt 明文比对已清除、登录限流、越权审计、5 个管理端接口 admin 守卫、SECRET_KEY 弱值启动校验）。当前真实剩余风险：日报列表缺部门/店铺/状态筛选、`/report/daily` 后端不返回未提交人员、manager 角色未验收、业务口径待业务确认。仓库仍无 CI/CD、无数据库迁移/回滚脚本、无 Docker/反向代理配置，后端仅有 22 项单元测试、前端无自动化测试。
 
 ### 核心用户
 
@@ -30,7 +30,11 @@
 
 ### Git context
 
-当前分支为 `main`。分析开始时 HEAD 为 `d304506`（`feat: 完善瀛江科技工作台运营日报与认证能力`），其父提交为 `4b84024`（项目基线与交付说明）；`git remote -v` 当前没有输出，远程仓库地址未确认。分析开始时工作区已有未提交的 `.idea/`、`.workbuddy/` 和 `开发TO DO验收清单-已核验-2026-09-22.docx`，这些不是本任务产生的内容，后续 AI 不得覆盖、删除或回退。每次任务开始仍必须重新运行 `git status --short`，不要依赖本段快照。
+当前分支为 `main`，HEAD 为 `0da52f6`（`docs: 补齐规格、任务记录与 AI 流程文档`），提交历史为 `0da52f6` → `22959a3`（安全 P0 + ECharts 按需引入）→ `d304506` → `4b84024`。
+
+远程仓库**已配置**：`origin` = `https://github.com/ICEXJL/Workbench.git`（2026-10-06 设为公开）。本地提交**尚未推送** —— 本机代理 `127.0.0.1:56975` 对 `github.com:443` 的 CONNECT 返回 502（`api.github.com` 不受影响），需在代理白名单放行 `github.com` 后执行 `git push -u origin main`。
+
+`.idea/`、`.workbuddy/`、`.playwright-mcp/` 等本地目录已在 `.gitignore` 中排除，**不得提交**。每次任务开始仍必须重新运行 `git status --short`，不要依赖本段快照。
 
 ## 2. Technology Stack
 
@@ -38,7 +42,7 @@
 | --- | --- | --- |
 | 前端 | Vue 3、Vue Router 4、Pinia 2、Ant Design Vue 4、Axios、ECharts 5、Vite 6 | 入口为 `frontend/src/main.js`；页面按路由懒加载。代码还直接导入 `dayjs`，但 `frontend/package.json` 未声明它为直接依赖，需单独确认并补齐依赖时再修改。 |
 | 后端 | FastAPI、Uvicorn、Pydantic 2、SQLAlchemy 2、PyMySQL、python-jose、bcrypt、python-dotenv、pandas | 依赖版本约束在 `backend/requirements.txt`；业务查询主要是 SQLAlchemy `text()` 原生 SQL，没有独立 ORM model 层。 |
-| 认证 | JWT HS256、bcrypt 密码哈希、Bearer Token | 实现位于 `backend/routers/auth.py` 和 `backend/services/sales_service.py`。生产强密钥、限流、审计和旧账号迁移仍需完成。 |
+| 认证 | JWT HS256、bcrypt 密码哈希、Bearer Token | 实现位于 `backend/routers/auth.py` 和 `backend/services/sales_service.py`。**已完成**：bcrypt 校验（无明文比对）、`SECRET_KEY` 弱值启动校验、登录限流（`services/login_throttle.py`，单进程内存态）、越权审计（`services/audit_service.py`）。**仍需**：多实例部署需将限流改为 Redis 共享存储 |
 | 数据库 | MySQL，SQLAlchemy Engine 连接池，`utf8mb4` | 连接配置来自 `backend/.env` 或进程环境变量；真实凭据不在仓库文档中。 |
 | API | REST 风格 FastAPI，统一业务前缀 `/api/v1`，健康检查 `/health`，自动 OpenAPI `/openapi.json` | 路由位于 `backend/routers/`；前端 Axios `baseURL` 为 `/api/v1`。 |
 | 构建 | `npm run dev`、`npm run build`、`npm run preview`；后端直接运行 `python main.py` | Vite 开发代理 `/api` 和 `/health` 到 `127.0.0.1:8000`。 |
@@ -182,7 +186,7 @@ operator + org_hierarchy + dp_ry 计算可见运营/店铺范围
 | `/auth/me` | GET | 返回 JWT 身份 | 需要 Bearer Token |
 | `/sales/daily` | GET | 昨日/指定日期店铺日销售分页 | 后端按角色和东南亚店铺范围过滤 |
 | `/sales/personnel` | GET | 前 7 天人员/店铺销售分页 | 后端按角色过滤，支持部门/组/运营筛选 |
-| `/sales/stats/regional`、`/sales/stats/platform` | GET | 近 7 日区域/平台趋势 | 当前路由虽依赖登录，但 service 未接收用户范围；仅 admin 限制是未完成风险 |
+| `/sales/stats/regional`、`/sales/stats/platform` | GET | 近 7 日区域/平台趋势 | **已挂 `require_roles("admin")`**（2026-10-06），leader 实测 403；service 仍未接收用户范围，全量口径仅对 admin 开放 |
 | `/sales/distribution/region`、`/sales/distribution/warehouse` | GET | 昨日区域/仓库分布 | 当前缺少后端角色限制和用户范围参数 |
 | `/sales/management` | GET | 人员目录 `name_roles_apt` | 当前缺少后端角色限制 |
 | `/report/daily` | GET/POST | 日报列表、当前用户当天提交/覆盖 | GET 目前主要返回已提交记录；POST 只允许非 admin 提交当天 |
@@ -193,7 +197,7 @@ operator + org_hierarchy + dp_ry 计算可见运营/店铺范围
 | `/health` | GET | 服务健康检查 | 不在 `/api/v1`；Vite/Nginx 应代理到 FastAPI |
 | `/openapi.json` | GET | FastAPI 自动生成契约 | 可用于接口审阅，不替代手写 API 文档 |
 
-注意：`GET /report/daily` 路由声明了 `status` 参数，但当前调用 `list_reports` 时没有传递它；部门、店铺、状态筛选和未提交补行是验收清单中仍未完成的能力。
+注意：`GET /report/daily` 路由声明了 `status` 参数，但当前调用 `list_reports` 时没有传递它；**部门、店铺、状态筛选仍未完成**。前端 `DailyReportList.vue` 已在客户端拼装未提交人员行（`row_key: missing-*`），但后端只返回已提交记录，大范围下跨页补行会不全。
 
 ### Database dependency map
 
@@ -207,7 +211,7 @@ operator + org_hierarchy + dp_ry 计算可见运营/店铺范围
 | `daily_report` | 运营日报字段、方向化店铺波动和提交时间 | `report_service` |
 | `target_monthly` | 运营按月份的销售/上架目标 | `report_service` |
 | `name_roles_apt` | 人员目录展示字段 `name`、`roles`、`apt` | `get_personnel_management` |
-| `operation_security_audit` | 启动时创建的安全审计基础表 | 当前仅建表，越权事件写入尚未完成 |
+| `operation_security_audit` | 安全审计表 | **已投入使用**：`services/audit_service.py` 写入 `deny_role_required`、`login_failed`、`login_blocked_account`、`login_blocked_ip` 等事件，写入失败不影响业务 |
 
 应用当前没有 ORM 模型或版本化迁移目录，表结构由既有 MySQL 业务库提供，启动函数只做少量幂等检查/新增字段。
 
