@@ -20,10 +20,11 @@
       <a-empty v-if="!loading && rows.length === 0" :description="`基准日期 ${cxrq} 无销售业绩数据`" />
       <a-table
         v-else
+        row-key="yy"
         :data-source="rows"
         :columns="columns"
         :pagination="pagination"
-        :scroll="{ x: 1500 }"
+        :scroll="{ x: 2100 }"
         size="middle"
         bordered
         @change="tableChanged"
@@ -68,7 +69,7 @@ const yyList = computed(() => {
 
 const dayHeaders = computed(() => {
   const headers = []
-  for (let i = 7; i >= 1; i--) {
+  for (let i = 0; i < 7; i++) {
     const d = dayjs(cxrq.value).subtract(i, 'day')
     headers.push(`${d.month() + 1}月${d.date()}日`)
   }
@@ -77,37 +78,142 @@ const dayHeaders = computed(() => {
 
 const columns = computed(() => {
   const base = [
-    { title: '部门简称', dataIndex: 'jc', key: 'jc', fixed: 'left', width: 90 },
-    { title: '组别', dataIndex: 'zm', key: 'zm', fixed: 'left', width: 90 },
-    { title: '运营', dataIndex: 'yy', key: 'yy', fixed: 'left', width: 90 },
-    { title: '入职时间', dataIndex: 'rzsj', key: 'rzsj', fixed: 'left', width: 110 },
-    { title: '店铺编号', dataIndex: 'dpbh', key: 'dpbh', fixed: 'left', width: 160 },
-    { title: '平台', dataIndex: 'fl', key: 'fl', width: 100 },
+    { title: '部门简称', dataIndex: 'jc', key: 'jc', fixed: 'left', width: 80, ellipsis: true },
+    { title: '组别', dataIndex: 'zm', key: 'zm', fixed: 'left', width: 80, ellipsis: true },
+    { title: '运营', dataIndex: 'yy', key: 'yy', fixed: 'left', width: 100, ellipsis: true },
+    { title: '入职时间', dataIndex: 'rzsj', key: 'rzsj', width: 100 },
+    { title: '店铺编号', dataIndex: 'dpbh', key: 'dpbh', width: 240, ellipsis: true },
+    { title: '平台', dataIndex: 'fl', key: 'fl', width: 130, ellipsis: true },
   ]
   const dayCols = []
   dayHeaders.value.forEach((h, idx) => {
-    const n = idx + 1
+    const n = 7 - idx
     dayCols.push({
       title: h,
       children: [
-        { title: '订单数', dataIndex: `dd${n}`, key: `dd${n}`, width: 90 },
-        { title: '销售额（USD）', dataIndex: `xs${n}`, key: `xs${n}`, width: 110 },
+        {
+          title: '订单数',
+          dataIndex: `dd${n}`,
+          key: `dd${n}`,
+          width: 75,
+          align: 'right',
+          customRender: ({ text }) => formatInteger(text),
+        },
+        {
+          title: '销售额（USD）',
+          dataIndex: `xs${n}`,
+          key: `xs${n}`,
+          width: 120,
+          align: 'right',
+          customRender: ({ text }) => formatMoney(text),
+        },
       ],
     })
   })
   return [...base, ...dayCols]
 })
 
-const pagination = computed(() => ({ current: page.value, pageSize: pageSize.value, total: total.value, showSizeChanger: true, pageSizeOptions: ['10','20','50'], showTotal: (n) => `共 ${n} 条` }))
-const cacheKey = (targetPage, targetSize=pageSize.value) => [cxrq.value,jc.value,zm.value,yy.value,targetPage,targetSize].join('|')
-function fetchPage(targetPage,targetSize=pageSize.value){const key=cacheKey(targetPage,targetSize);if(pageCache.has(key))return Promise.resolve(pageCache.get(key));if(pending.has(key))return pending.get(key);const task=getPersonnelSales({cxrq:cxrq.value,department:jc.value==='全部'?undefined:jc.value,group:zm.value==='全部'?undefined:zm.value,operator:yy.value==='全部'?undefined:yy.value,page:targetPage,page_size:targetSize}).then(data=>{pageCache.set(key,data);return data}).finally(()=>pending.delete(key));pending.set(key,task);return task}
-async function showPage(targetPage=1,targetSize=pageSize.value){const version=++requestVersion;loading.value=true;try{const data=await fetchPage(targetPage,targetSize);if(version!==requestVersion)return;page.value=targetPage;pageSize.value=targetSize;rows.value=data.items;total.value=data.total;options.value=data.options;prefetch(targetPage,targetSize,data.total)}finally{if(version===requestVersion)loading.value=false}}
-function prefetch(current,size,count){const last=Math.ceil(count/size);[current+1,current+2].filter(p=>p<=last).forEach(p=>fetchPage(p,size).catch(()=>{}))}
-function filtersChanged(){pageCache.clear();showPage(1)}
-function onJcChange(){zm.value='全部';yy.value='全部';filtersChanged()}
-function onZmChange(){yy.value='全部';filtersChanged()}
-function tableChanged(p){if(p.pageSize!==pageSize.value)pageCache.clear();showPage(p.current,p.pageSize)}
-function load(){pageCache.clear();showPage(1)}
+const pagination = computed(() => ({
+  current: page.value,
+  pageSize: pageSize.value,
+  total: total.value,
+  showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50'],
+  showTotal: (count) => `共 ${count} 名运营`,
+}))
+const cacheKey = (targetPage, targetSize = pageSize.value) =>
+  [cxrq.value, jc.value, zm.value, yy.value, targetPage, targetSize].join('|')
+
+function fetchPage(targetPage, targetSize = pageSize.value) {
+  const key = cacheKey(targetPage, targetSize)
+  if (pageCache.has(key)) return Promise.resolve(pageCache.get(key))
+  if (pending.has(key)) return pending.get(key)
+
+  const task = getPersonnelSales({
+    cxrq: cxrq.value,
+    department: jc.value === '全部' ? undefined : jc.value,
+    group: zm.value === '全部' ? undefined : zm.value,
+    operator: yy.value === '全部' ? undefined : yy.value,
+    page: targetPage,
+    page_size: targetSize,
+  })
+    .then((data) => {
+      pageCache.set(key, data)
+      return data
+    })
+    .finally(() => pending.delete(key))
+  pending.set(key, task)
+  return task
+}
+
+async function showPage(targetPage = 1, targetSize = pageSize.value) {
+  const version = ++requestVersion
+  loading.value = true
+  try {
+    const data = await fetchPage(targetPage, targetSize)
+    if (version !== requestVersion) return
+    page.value = targetPage
+    pageSize.value = targetSize
+    rows.value = data.items
+    total.value = data.total
+    options.value = data.options
+    prefetch(targetPage, targetSize, data.total)
+  } finally {
+    if (version === requestVersion) loading.value = false
+  }
+}
+
+function prefetch(current, size, count) {
+  const lastPage = Math.ceil(count / size)
+  const nextPages = [current + 1, current + 2].filter((targetPage) => targetPage <= lastPage)
+  nextPages.forEach((targetPage) => fetchPage(targetPage, size).catch(() => {}))
+}
+
+function filtersChanged() {
+  pageCache.clear()
+  showPage(1)
+}
+
+function onJcChange() {
+  zm.value = '全部'
+  yy.value = '全部'
+  filtersChanged()
+}
+
+function onZmChange() {
+  yy.value = '全部'
+  filtersChanged()
+}
+
+function tableChanged(paginationState) {
+  if (paginationState.pageSize !== pageSize.value) pageCache.clear()
+  showPage(paginationState.current, paginationState.pageSize)
+}
+
+function load() {
+  pageCache.clear()
+  showPage(1)
+}
+
+function formatInteger(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(value)
+  return Number.isFinite(number)
+    ? number.toLocaleString('en-US', { maximumFractionDigits: 0 })
+    : '-'
+}
+
+function formatMoney(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(value)
+  if (!Number.isFinite(number)) return '-'
+
+  const formatted = number.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return `$ ${formatted}`
+}
 
 onMounted(load)
 </script>

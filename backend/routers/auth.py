@@ -6,10 +6,32 @@ from jose import JWTError, jwt
 
 import config
 from schemas import schemas
-from services import sales_service
+from services import audit_service, login_throttle, sales_service
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 bearer = HTTPBearer(auto_error=False)
+
+
+def require_roles(*roles: str):
+    """角色守卫：仅允许指定角色访问，否则记录审计并返回 403。
+
+    用于管理端接口的服务端授权；前端隐藏菜单不构成安全边界。
+    """
+
+    def guard(
+        request: Request,
+        user: dict = Depends(get_current_user),
+    ) -> dict:
+        if user.get("role") not in roles:
+            audit_service.record_event(
+                "deny_role_required",
+                user.get("sub"),
+                f"role={user.get('role')} path={request.url.path}",
+            )
+            raise HTTPException(status_code=403, detail="无权访问该功能")
+        return user
+
+    return guard
 
 
 def create_access_token(user: dict) -> str:
@@ -49,11 +71,31 @@ def get_current_user(
 
 
 @router.post("/login", response_model=schemas.TokenResponse)
-def login(req: schemas.LoginRequest):
-    user = sales_service.find_user(req.username.strip(), req.password)
+def login(request: Request, req: schemas.LoginRequest):
+    username = req.username.strip()
+    client_ip = request.client.host if request.client else ""
+
+    login_throttle.register_ip_attempt(client_ip)
+    if login_throttle.is_ip_blocked(client_ip):
+        audit_service.record_event("login_blocked_ip", username, f"ip={client_ip}")
+        raise HTTPException(status_code=429, detail="登录尝试过于频繁，请稍后再试")
+
+    remaining = login_throttle.is_account_locked(username)
+    if remaining:
+        audit_service.record_event("login_blocked_account", username, f"ip={client_ip}")
+        raise HTTPException(
+            status_code=429,
+            detail=f"账号已锁定，请在 {remaining} 秒后重试",
+        )
+
+    user = sales_service.find_user(username, req.password)
     if not user:
+        login_throttle.register_failure(username)
+        audit_service.record_event("login_failed", username, f"ip={client_ip}")
         raise HTTPException(status_code=401, detail="账号或密码错误，请核对后再试！")
-    identity = sales_service.resolve_identity(req.username.strip())
+
+    login_throttle.reset_account(username)
+    identity = sales_service.resolve_identity(username)
     if not identity:
         raise HTTPException(status_code=403, detail="账号未关联运营档案，请联系管理端")
     token = create_access_token(identity)

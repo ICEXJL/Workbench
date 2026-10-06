@@ -1,12 +1,20 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import SQLAlchemyError
 
 from routers.auth import get_current_user
 from schemas import schemas
 from services import report_service
 
 router = APIRouter(prefix="/report", tags=["运营日报"])
+
+
+def _cumulative_sales_summary(operator_id: int, report_date: date) -> dict:
+    try:
+        return report_service.get_cumulative_sales(operator_id, report_date)
+    except (report_service.CumulativeSalesDataError, SQLAlchemyError) as exc:
+        raise HTTPException(status_code=503, detail="累计销售数据暂时无法读取，请联系管理员") from exc
 
 
 @router.get("/daily")
@@ -20,7 +28,32 @@ def daily_reports(start_date: date | None = None, end_date: date | None = None, 
 def my_daily_report(report_date: date = Query(default_factory=date.today), user: dict = Depends(get_current_user)):
     report = report_service.get_report(int(user["userId"]), str(report_date))
     target = report_service.get_target(int(user["userId"]), report_date.strftime("%Y-%m"))
-    return {"report": report, "target": target, "identity": user}
+    if report and report_date < date.today():
+        sales_summary = {
+            "amount": report["cumulative_sales"],
+            "currency": "USD",
+            "period_start": str(report_date.replace(day=1)),
+            "period_end": str(report_date),
+            "data_as_of": None,
+            "source": "daily_report",
+            "status": "snapshot",
+        }
+    else:
+        try:
+            sales_summary = _cumulative_sales_summary(int(user["userId"]), report_date)
+        except HTTPException as exc:
+            if exc.status_code != 503:
+                raise
+            sales_summary = {
+                "amount": None,
+                "currency": "USD",
+                "period_start": str(report_date.replace(day=1)),
+                "period_end": str(report_date),
+                "data_as_of": None,
+                "source": "dny_data",
+                "status": "source_error",
+            }
+    return {"report": report, "target": target, "identity": user, "sales_summary": sales_summary}
 
 
 @router.post("/daily")
@@ -41,6 +74,10 @@ def submit_daily_report(payload: schemas.DailyReportPayload, user: dict = Depend
             raise HTTPException(status_code=422, detail=f"{label}店铺数量与店铺名称数量不一致")
 
     payload_data = payload.model_dump()
+    sales_summary = _cumulative_sales_summary(int(user["userId"]), payload.report_date)
+    if sales_summary["status"] != "available":
+        raise HTTPException(status_code=409, detail="累计销售数据尚未覆盖可计算区间，暂不能提交")
+    payload_data["cumulative_sales"] = sales_summary["amount"]
     # 备货审核及时率只在周一、周三采集；其他日期保留当天已有值，首次提交按 100% 记录。
     if payload.report_date.weekday() not in (0, 2):
         existing = report_service.get_report(int(user["userId"]), str(payload.report_date))

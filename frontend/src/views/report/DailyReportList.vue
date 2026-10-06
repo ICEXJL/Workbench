@@ -100,7 +100,8 @@ const ReportCell = defineComponent({
       if (column.key === 'variation') return record.submitted ? variationCell(record) : h('span', { class: 'muted' }, '-')
       if (column.key === 'number') return h('span', { class: record.submitted ? '' : 'muted' }, record.submitted ? formatNumber(record[column.dataIndex]) : '-')
       if (column.key === 'percent') return h('span', { class: record.submitted ? '' : 'muted' }, record.submitted ? `${record[column.dataIndex] ?? '-'}%` : '-')
-      if (column.key === 'bool' || column.key === 'resolved') return record.submitted ? h('span', { style: tagStyle(isTrue(record[column.dataIndex]) ? 'warning' : 'normal') }, boolText(record[column.dataIndex])) : h('span', { class: 'muted' }, '-')
+      if (column.key === 'bool') return record.submitted ? h('span', { style: tagStyle(isTrue(record[column.dataIndex]) ? 'warning' : 'normal') }, boolText(record[column.dataIndex])) : h('span', { class: 'muted' }, '-')
+      if (column.key === 'resolved') return record.submitted ? h('span', { style: resolvedTagStyle(record[column.dataIndex]) }, boolText(record[column.dataIndex])) : h('span', { class: 'muted' }, '-')
       if (column.key === 'rate') return h('span', { class: record.completion_rate !== null && record.submitted ? 'rate' : 'muted' }, record.completion_rate !== null && record.submitted ? `${record.completion_rate}%` : '-')
       if (column.key === 'status') return h('span', { style: tagStyle(record.submitted ? 'normal' : 'danger') }, record.submitted ? '已提交' : '未提交')
       return h('span', record[column.dataIndex] ?? '-')
@@ -137,6 +138,7 @@ const problemRows = computed(() => {
 
 function isTrue(value) { return value === true || value === 1 || value === '1' }
 function tagStyle(kind) { const colors = { normal: ['#318345', '#edf8df'], warning: ['#c8751d', '#fff0df'], danger: ['#d74242', '#fde9e9'] }; const [color, background] = colors[kind]; return { display: 'inline-block', padding: '3px 8px', borderRadius: '999px', color, background, fontSize: '12px', lineHeight: '1.3' } }
+function resolvedTagStyle(value) { return tagStyle(isTrue(value) ? 'normal' : 'warning') }
 function boolText(value) { return value === null || value === undefined ? '-' : isTrue(value) ? '是' : '否' }
 function formatNumber(value) { return value === null || value === undefined ? '-' : Number(value).toLocaleString('zh-CN') }
 function money(value) { return `$ ${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}` }

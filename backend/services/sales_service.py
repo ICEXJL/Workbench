@@ -145,21 +145,33 @@ def get_personnel_sales(user: dict, cxrq_str: str, department: str | None, group
         if value:
             filters += f" AND {column}=:{key}"
             params[key] = value
+
     day_fields = []
-    for index, days_ago in enumerate(range(7, 0, -1), start=1):
+    for index, days_ago in enumerate(range(6, -1, -1), start=1):
         day_fields.extend([
-            f"SUM(CASE WHEN d.rq=DATE_FORMAT(STR_TO_DATE(:cxrq,'%Y-%m-%d') - INTERVAL {days_ago} DAY,'%Y-%m-%d') THEN d.dds END) dd{index}",
-            f"ROUND(SUM(CASE WHEN d.rq=DATE_FORMAT(STR_TO_DATE(:cxrq,'%Y-%m-%d') - INTERVAL {days_ago} DAY,'%Y-%m-%d') THEN d.xse END),2) xs{index}",
+            f"SUM(CASE WHEN d.rq=DATE_FORMAT(STR_TO_DATE(:cxrq,'%Y-%m-%d') - INTERVAL {days_ago} DAY,'%Y-%m-%d') THEN d.dds ELSE 0 END) dd{index}",
+            f"ROUND(SUM(CASE WHEN d.rq=DATE_FORMAT(STR_TO_DATE(:cxrq,'%Y-%m-%d') - INTERVAL {days_ago} DAY,'%Y-%m-%d') THEN d.xse ELSE 0 END),2) xs{index}",
         ])
-    select_sql = f"""SELECT p.jc,p.zm,p.yy,p.rzsj,p.dpbh,
-      CASE WHEN p.dpbh LIKE 'shopee-ph%' THEN 'shopee-ph' WHEN p.dpbh LIKE 'shopee-3pf%' THEN 'shopee-3pf'
-           WHEN p.dpbh LIKE 'lazada-ph%' THEN 'lazada-ph' WHEN p.dpbh LIKE 'lazada-3pf%' THEN 'lazada-3pf'
-           WHEN p.dpbh LIKE 'tiktok-ph%' THEN 'tiktok-ph' WHEN p.dpbh LIKE 'tiktok-3pf%' THEN 'tiktok-3pf' END fl,
-      {','.join(day_fields)}
-      FROM dp_ry p JOIN dny_data d ON d.dpbh=p.dpbh AND d.rq BETWEEN DATE_FORMAT(STR_TO_DATE(:cxrq,'%Y-%m-%d') - INTERVAL 7 DAY,'%Y-%m-%d') AND DATE_FORMAT(STR_TO_DATE(:cxrq,'%Y-%m-%d') - INTERVAL 1 DAY,'%Y-%m-%d')
-      WHERE p.qy='东南亚'{filters} GROUP BY p.jc,p.zm,p.yy,p.rzsj,p.dpbh"""
-    total = run_query(f"SELECT COUNT(*) total FROM ({select_sql}) rows_count", params)[0]["total"]
-    items = run_query(f"{select_sql} ORDER BY zm,yy,fl,xs7 DESC LIMIT :limit OFFSET :offset", params)
+
+    platform_expression = """CASE WHEN p.dpbh LIKE 'shopee-ph%' THEN 'shopee-ph' WHEN p.dpbh LIKE 'shopee-3pf%' THEN 'shopee-3pf'
+      WHEN p.dpbh LIKE 'lazada-ph%' THEN 'lazada-ph' WHEN p.dpbh LIKE 'lazada-3pf%' THEN 'lazada-3pf'
+      WHEN p.dpbh LIKE 'tiktok-ph%' THEN 'tiktok-ph' WHEN p.dpbh LIKE 'tiktok-3pf%' THEN 'tiktok-3pf' END"""
+    from_sql = """FROM dp_ry p JOIN dny_data d
+      ON d.dpbh=p.dpbh
+      AND d.rq BETWEEN DATE_FORMAT(STR_TO_DATE(:cxrq,'%Y-%m-%d') - INTERVAL 6 DAY,'%Y-%m-%d')
+      AND DATE_FORMAT(STR_TO_DATE(:cxrq,'%Y-%m-%d') - INTERVAL 0 DAY,'%Y-%m-%d')"""
+    where_sql = f"WHERE p.qy='东南亚'{filters}"
+    select_sql = f"""SELECT
+      GROUP_CONCAT(DISTINCT p.jc ORDER BY p.jc SEPARATOR '、') jc,
+      GROUP_CONCAT(DISTINCT p.zm ORDER BY p.zm SEPARATOR '、') zm,
+      p.yy,MIN(p.rzsj) rzsj,
+      GROUP_CONCAT(DISTINCT p.dpbh ORDER BY p.dpbh SEPARATOR '、') dpbh,
+      GROUP_CONCAT(DISTINCT {platform_expression} ORDER BY {platform_expression} SEPARATOR '、') fl,
+      {','.join(day_fields)},
+      COALESCE(SUM(d.dds),0) total_orders,ROUND(COALESCE(SUM(d.xse),0),2) total_sales
+      {from_sql} {where_sql} GROUP BY p.yy"""
+    total = run_query(f"SELECT COUNT(DISTINCT p.yy) total {from_sql} {where_sql}", params)[0]["total"]
+    items = run_query(f"{select_sql} ORDER BY total_sales DESC,yy LIMIT :limit OFFSET :offset", params)
     options = run_query(f"SELECT DISTINCT p.jc,p.zm,p.yy FROM dp_ry p WHERE p.qy='东南亚'{scope_sql} ORDER BY p.jc,p.zm,p.yy", scope_params)
     return {"items": items, "total": total, "page": page, "page_size": page_size, "options": options}
 

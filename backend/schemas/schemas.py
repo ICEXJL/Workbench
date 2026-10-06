@@ -38,7 +38,8 @@ class TokenResponse(BaseModel):
 
 class DailyReportPayload(BaseModel):
     report_date: date
-    cumulative_sales: Decimal = Field(ge=0)
+    # Compatibility only: the server recalculates this value from fbs_data.
+    cumulative_sales: Decimal | None = None
     listing_count: int = Field(ge=0)
     optimization_count: int = Field(ge=0)
     weekly_delay_exceeded: bool | None = None

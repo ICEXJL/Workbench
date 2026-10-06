@@ -1,6 +1,12 @@
 import json
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from database import run_execute, run_query
+
+
+class CumulativeSalesDataError(ValueError):
+    """Raised when source sales rows cannot be interpreted safely."""
 
 
 def _decode_shop_names(value: object) -> list[str]:
@@ -70,6 +76,81 @@ def visible_people(user: dict) -> list[dict]:
 def get_target(operator_id: int, target_month: str) -> dict | None:
     rows = run_query("SELECT operator_id,department,month target_month,sales_target,listing_target,status,updated_at FROM target_monthly WHERE operator_id=:id AND month=:month", {"id": operator_id, "month": target_month})
     return rows[0] if rows else None
+
+
+def get_cumulative_sales(operator_id: int, report_date: date) -> dict:
+    period_start = report_date.replace(day=1)
+    shops = run_query("""SELECT DISTINCT TRIM(p.dpbh) dpbh
+        FROM dp_ry p JOIN operator o
+          ON p.yy COLLATE utf8mb4_0900_ai_ci = o.real_name COLLATE utf8mb4_0900_ai_ci
+        WHERE o.id=:operator_id AND o.status=1
+          AND p.dpbh IS NOT NULL AND TRIM(p.dpbh) <> ''
+        ORDER BY dpbh""", {"operator_id": operator_id})
+    shop_ids = sorted({str(row["dpbh"]).strip() for row in shops if row.get("dpbh")})
+    base = {
+        "amount": None,
+        "currency": "USD",
+        "period_start": str(period_start),
+        "period_end": str(report_date),
+        "data_as_of": None,
+        "source": "dny_data",
+        "status": "mapping_missing",
+    }
+    if not shop_ids:
+        return base
+
+    source_rows = run_query("SELECT MAX(rq) latest_date FROM dny_data")
+    source_latest = source_rows[0].get("latest_date") if source_rows else None
+    if isinstance(source_latest, datetime):
+        source_latest = source_latest.date()
+    elif source_latest is not None and not isinstance(source_latest, date):
+        try:
+            source_latest = date.fromisoformat(str(source_latest).strip())
+        except (TypeError, ValueError) as exc:
+            raise CumulativeSalesDataError("源销售数据日期格式异常") from exc
+    if source_latest is None or source_latest < report_date:
+        return {**base, "status": "not_ready", "data_as_of": str(source_latest) if source_latest else None}
+
+    period_end = min(report_date, source_latest)
+    if period_end < period_start:
+        return {**base, "status": "not_ready", "data_as_of": str(source_latest)}
+
+    params = {f"shop{i}": shop for i, shop in enumerate(shop_ids)}
+    placeholders = ",".join(f":shop{i}" for i in range(len(shop_ids)))
+    rows = run_query(f"""SELECT TRIM(dpbh) dpbh,rq,xse
+        FROM dny_data
+        WHERE TRIM(dpbh) IN ({placeholders}) AND rq >= :period_start AND rq <= :period_end""",
+        {**params, "period_start": str(period_start), "period_end": str(period_end)})
+
+    total = Decimal("0")
+    for row in rows:
+        shop = str(row["dpbh"]).strip()
+        if shop not in shop_ids:
+            continue
+        raw_date = row["rq"]
+        if isinstance(raw_date, datetime):
+            sales_date = raw_date.date()
+        elif isinstance(raw_date, date):
+            sales_date = raw_date
+        else:
+            try:
+                sales_date = date.fromisoformat(str(raw_date).strip())
+            except (TypeError, ValueError) as exc:
+                raise CumulativeSalesDataError("源销售数据日期格式异常") from exc
+
+        try:
+            amount = Decimal(str(row["xse"]).strip())
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise CumulativeSalesDataError("源销售金额格式异常") from exc
+        if not amount.is_finite():
+            raise CumulativeSalesDataError("源销售金额格式异常")
+
+        if period_start <= sales_date <= period_end:
+            total += amount
+
+    total = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return {**base, "amount": total, "period_end": str(period_end),
+            "data_as_of": str(source_latest), "status": "available"}
 
 
 def save_target(payload: dict) -> None:

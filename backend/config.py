@@ -27,7 +27,26 @@ POOL_RECYCLE = int(os.getenv("POOL_RECYCLE", "3600"))
 POOL_PRE_PING = True
 
 # ==================== 认证配置 ====================
-SECRET_KEY = os.getenv("SECRET_KEY", "please-change-this-in-production")
+# 已知的弱/公开密钥：命中即拒绝启动，避免伪造任意角色 Token。
+INSECURE_SECRET_KEYS = {
+    "please-change-this-in-production",
+    "secret",
+    "changeme",
+}
+SECRET_KEY = os.getenv("SECRET_KEY", "")
+MIN_SECRET_KEY_LENGTH = 32
+
+if not SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY 未配置。复制 backend/.env.example 为 backend/.env 并填入强随机密钥，"
+        "可用 python -c \"import secrets; print(secrets.token_urlsafe(48))\" 生成。"
+    )
+if SECRET_KEY in INSECURE_SECRET_KEYS or len(SECRET_KEY) < MIN_SECRET_KEY_LENGTH:
+    raise RuntimeError(
+        f"SECRET_KEY 过弱（长度 {len(SECRET_KEY)}，要求至少 {MIN_SECRET_KEY_LENGTH} 且不得为默认值）。"
+        "请生成新的强密钥：python -c \"import secrets; print(secrets.token_urlsafe(48))\"。"
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "43200"))  # 30 天
 
