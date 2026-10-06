@@ -17,8 +17,9 @@
 | T09 日报提交页 | 已完成 | 13 字段、进度面板、周二限制、回填与覆盖交互 |
 | T10 日报查看页 | 部分完成 | 列表、详情、空态、未提交补行已做；**缺部门/店铺/状态筛选** |
 | T11 身份与错误拦截 | 已完成 | 401 回登录、403 提示、网络错误提示 |
-| T12 四角色端到端 | 接口层已通过 | leader/operator/admin 已验；**manager 缺账号未验** |
+| T12 四角色端到端 | 已完成 | 四角色全部实测通过（manager 于 T14 补做）；接口矩阵 36/36、数据范围三层隔离均通过 |
 | T13 前端性能优化 | 部分完成 | ECharts 按需引入完成（-50%）；**`index-*.js` 1.5 MB 未处理** |
+| T14 RBAC 权限核查 | 已完成 | 真实账号实测：接口矩阵 36/36、范围三层隔离、越权专项8 项、审计落库 33 条；manager 端到端补做 28/28；新增 18 项权限回归测试 |
 
 ## 安全 P0（2026-10-06 全部落地）
 
@@ -49,17 +50,21 @@
 
 ## 测试现状
 
-后端 22 项单元测试全部通过：
+后端 42 项单元测试全部通过：
 
 | 文件 | 用例数 | 覆盖内容 |
 | --- | --- | --- |
 | `tests/test_daily_report_sales.py` | 13 | `dny_data` 自动取数、状态机、口径边界 |
-| `tests/test_login_security.py` | 10 | 账号锁定、IP 维度停用状态与开关行为、计数清理回归 |
+| `tests/test_login_security.py` | 12 | 账号锁定、IP 维度停用状态与开关行为、计数清理回归 |
 | `tests/test_personnel_sales.py` | 1 | 人员销售聚合与排名 |
+| `tests/test_rbac_permissions.py` | 18 | 四角色范围算法、身份防伪造、路由角色声明防误删 |
 
-运行：`cd backend && python -m unittest discover -s ../tests -p "test_*.py"`
+运行：`python -m unittest discover -s tests -p "test_*.py"`
 
-前端与端到端**无自动化测试**。
+前端与端到端**无自动化测试**。真实越权矩阵靠一次性实测脚本完成，
+脚本归档在 `.verify-archive/`（含真实账号，已Git 忽略，不入库）：
+`verify_rbac.py`（接口矩阵）、`verify_rbac_scope.py`（数据范围隔离）、
+`verify_audit_log.py`（审计落库）、`verify_manager_e2e.py`（manager 端到端）。
 
 ## 最近优化
 

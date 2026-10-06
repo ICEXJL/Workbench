@@ -26,3 +26,6 @@ frontend/.vite/
 # 本地验证产物
 verify-echarts-*.png
 frontend/dist-verify/
+
+# 一次性实测脚本归档（含真实账号，仅本地留档，不入库）
+.verify-archive/
