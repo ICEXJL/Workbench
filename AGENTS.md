@@ -17,7 +17,7 @@
 
 ### 当前阶段
 
-项目处于开发验收阶段，不应视为已完成的生产系统。**安全 P0 与权限 P0 已于 2026-10-06 落地并实测闭环**（bcrypt 明文比对已清除、登录限流、越权审计、5 个管理端接口 admin 守卫、SECRET_KEY 弱值启动校验）。RBAC 已于同日完成四角色实测验收：admin/leader/operator/manager 接口矩阵 36/36符合预期，店铺、人员、日报三层范围隔离均验证为真实服务端过滤（leader 28 店铺为 admin 1009 家的严格子集、独有 0），越权专项 8 项全部被拦下，审计表实有 33 条 `deny_role_required`。当前真实剩余风险：日报列表缺部门/店铺/状态筛选、`/report/daily` 后端不返回未提交人员、`org_hierarchy` 调整后无回归测试、范围变更无 CI 守护、业务口径待业务确认。仓库仍无 CI/CD、无数据库迁移/回滚脚本、无 Docker/反向代理配置，后端仅有 42 项单元测试（其中 18 项为权限回归）、前端无自动化测试。
+截至 2026-10-08，项目仍处于开发验收阶段，不应视为已完成的生产系统。**安全 P0 与权限 P0 已于 2026-10-06 落地并实测闭环**（bcrypt 明文比对已清除、登录限流、越权审计、5 个管理端接口 admin 守卫、SECRET_KEY 弱值启动校验）。RBAC 已同日完成四角色实测验收：admin/leader/operator/manager 接口矩阵 36/36 符合预期，店铺、人员、日报三层范围隔离均验证为真实服务端过滤（leader 28 店铺为 admin 1009 家的严格子集、独有 0），越权专项 8 项全部被拦下，审计表实有 33 条 `deny_role_required`。当前真实剩余风险：日报列表缺部门/店铺/状态筛选、`/report/daily` 后端不返回未提交人员、`org_hierarchy` 调整后无回归测试、范围变更无 CI 守护、业务口径待确认。仓库仍无 CI/CD、无数据库迁移/回滚脚本、无 Docker/反向代理配置，后端有 44 项单元测试但完整套件当前有 1 项既有登录限流边界失败，前端无自动化测试。
 
 ### 核心用户
 
@@ -40,14 +40,14 @@
 
 | 层 | 当前实现 | 事实来源/注意事项 |
 | --- | --- | --- |
-| 前端 | Vue 3、Vue Router 4、Pinia 2、Ant Design Vue 4、Axios、ECharts 5、Vite 6 | 入口为 `frontend/src/main.js`；页面按路由懒加载。代码还直接导入 `dayjs`，但 `frontend/package.json` 未声明它为直接依赖，需单独确认并补齐依赖时再修改。 |
+| 前端 | Vue 3、Vue Router 4、Pinia 2、Ant Design Vue 4、Axios、ECharts 5、Vite 6、dayjs | 入口为 `frontend/src/main.js`；页面按路由懒加载；`dayjs` 已在 `frontend/package.json` 中声明。 |
 | 后端 | FastAPI、Uvicorn、Pydantic 2、SQLAlchemy 2、PyMySQL、python-jose、bcrypt、python-dotenv、pandas | 依赖版本约束在 `backend/requirements.txt`；业务查询主要是 SQLAlchemy `text()` 原生 SQL，没有独立 ORM model 层。 |
 | 认证 | JWT HS256、bcrypt 密码哈希、Bearer Token | 实现位于 `backend/routers/auth.py` 和 `backend/services/sales_service.py`。**已完成**：bcrypt 校验（无明文比对）、`SECRET_KEY` 弱值启动校验、登录限流（`services/login_throttle.py`，单进程内存态）、越权审计（`services/audit_service.py`）。**仍需**：多实例部署需将限流改为 Redis 共享存储 |
 | 数据库 | MySQL，SQLAlchemy Engine 连接池，`utf8mb4` | 连接配置来自 `backend/.env` 或进程环境变量；真实凭据不在仓库文档中。 |
 | API | REST 风格 FastAPI，统一业务前缀 `/api/v1`，健康检查 `/health`，自动 OpenAPI `/openapi.json` | 路由位于 `backend/routers/`；前端 Axios `baseURL` 为 `/api/v1`。 |
 | 构建 | `npm run dev`、`npm run build`、`npm run preview`；后端直接运行 `python main.py` | Vite 开发代理 `/api` 和 `/health` 到 `127.0.0.1:8000`。 |
 | 部署 | README/维护指南描述为 Nginx/宝塔提供 `frontend/dist`，Uvicorn 单独监听后端端口 | 仓库内没有 Dockerfile、docker-compose、Nginx 配置或进程管理配置；生产部署细节需以实际服务器配置为准。 |
-| 测试 | 当前没有 `tests/` 下的自动化测试文件，也没有前端测试框架配置 | 已有验证主要是 `python -m compileall -q .`、`npm run build`、接口冒烟和 Word 验收记录。 |
+| 测试 | `tests/` 下有 44 项后端 unittest；没有前端测试框架配置 | 日报销售额专项 15 项通过；完整套件当前有 1 项登录限流边界断言失败。另有接口冒烟、四角色实测和 Word 验收记录。 |
 
 已确认的当前验证命令：
 
@@ -165,7 +165,7 @@ operator + org_hierarchy + dp_ry 计算可见运营/店铺范围
 - `dp_ry` 把店铺映射到运营、组别、部门、区域和仓库，并被用于范围过滤与人员销售聚合。
 - `/sales/daily` 先按日期、可见店铺和可选店铺过滤，再返回分页行、总数、汇总和可选店铺。
 - `/sales/personnel` 按所选基准日当天及之前 6 天（共 7 天）聚合运营人员的店铺表现，后端分页，前端缓存页。
-- `/sales/stats/*`、`/sales/distribution/*` 和 `/sales/management` 当前 service 查询没有统一接收可见范围参数；非 admin 后端限制是发布前必须确认/补齐的风险。
+- `/sales/stats/*`、`/sales/distribution/*` 和 `/sales/management` 的 service 查询使用全量口径，但路由层已统一限制为 `admin`；如果未来开放给其他角色，必须先补齐可见范围参数和回归测试。
 
 ### 日报数据流
 
@@ -187,8 +187,8 @@ operator + org_hierarchy + dp_ry 计算可见运营/店铺范围
 | `/sales/daily` | GET | 昨日/指定日期店铺日销售分页 | 后端按角色和东南亚店铺范围过滤 |
 | `/sales/personnel` | GET | 前 7 天人员/店铺销售分页 | 后端按角色过滤，支持部门/组/运营筛选 |
 | `/sales/stats/regional`、`/sales/stats/platform` | GET | 近 7 日区域/平台趋势 | **已挂 `require_roles("admin")`**（2026-10-06），leader 实测 403；service 仍未接收用户范围，全量口径仅对 admin 开放 |
-| `/sales/distribution/region`、`/sales/distribution/warehouse` | GET | 昨日区域/仓库分布 | 当前缺少后端角色限制和用户范围参数 |
-| `/sales/management` | GET | 人员目录 `name_roles_apt` | 当前缺少后端角色限制 |
+| `/sales/distribution/region`、`/sales/distribution/warehouse` | GET | 昨日区域/仓库分布 | 路由层仅允许 `admin`；service 使用全量口径 |
+| `/sales/management` | GET | 人员目录 `name_roles_apt` | 路由层仅允许 `admin`；当前为只读目录 |
 | `/report/daily` | GET/POST | 日报列表、当前用户当天提交/覆盖 | GET 目前主要返回已提交记录；POST 只允许非 admin 提交当天 |
 | `/report/daily/mine` | GET | 当前用户某日回填和月目标 | userId 来自 JWT，不接受前端指定提交主体 |
 | `/report/target` | GET/POST | 读取/保存运营月度目标 | POST 仅 admin；GET 检查目标运营在可见范围 |
@@ -218,6 +218,18 @@ operator + org_hierarchy + dp_ry 计算可见运营/店铺范围
 ### 启动时数据库副作用
 
 FastAPI startup 会调用 `init_business_tables()`：检查并可能向 `denglu`、`daily_report` 添加字段，并创建 `operation_security_audit` 表。这不是完整迁移系统；任何新增/修改 DDL 必须先记录到 `docs/` 或专门迁移 Spec，并说明幂等性、锁表风险、回滚和生产执行人。
+
+**因存在上述 DDL，应用账号必须对业务库有 DDL 权限**；若生产使用只读账号，启动会直接失败。当前尚未提供跳过 DDL 的开关。
+
+### 部署时的数据库配置（易踩坑）
+
+**系统不会自动识别服务器上的数据库。** `backend/config.py` 用 `os.getenv("DB_HOST", "127.0.0.1")` 等默认值，而 `backend/.env` 已被 Git 忽略、不会随代码进入仓库。若服务器上未配置，连接会退回 `127.0.0.1` / `root` / `123456` / `sales_data` 并连不上库。
+
+**系统环境变量优先级高于 `.env`** —— `python-dotenv` 默认 `override=False`，已实测确认（`config.py` 旧注释误写为"存在时覆盖环境变量"，2026-10-10 已修正）。生产可直接用环境变量或 systemd `EnvironmentFile`，无需改代码。
+
+`config.py` **不得**用字符串拼接生成连接串：库名 `东南亚运营数据` 含中文，拼接后建 Engine 会因编码出错；连接串统一由 `database.URL.create()` 构造（该处的 `config.DATABASE_URL` 已于 2026-10-10 删除，此前为无人引用的死代码）。
+
+完整部署步骤、Nginx 配置与上线检查清单见 `docs/部署与配置.md`。
 
 ## 5. Important Business Rules
 
@@ -257,7 +269,7 @@ FastAPI startup 会调用 `init_business_tables()`：检查并可能向 `denglu`
 
 - [NEEDS_CONFIRMATION] `dny_data.xse` 的上游会计定义、退款/取消/测试订单是否计入。币种按用户确认为 USD，但源表没有币种列，仍需与上游对账。
 - [NEEDS_CONFIRMATION] 管理员/主管/组长在历史账号别名、禁用 operator 和组织变更时的完整范围规则。
-- [NEEDS_CONFIRMATION] 统计接口是否允许非 admin 使用，以及区域/仓库分布是否必须按角色隔离。
+- 统计、分布和人员目录接口当前仅对 `admin` 开放；如业务要求非 admin 使用，必须作为新的权限和数据范围需求评审。
 - [NEEDS_CONFIRMATION] 应用、数据库和运营日报的时区；代码使用 Python/MySQL 的本机当前日期。
 - [NEEDS_CONFIRMATION] `/sales/stats/*` 趋势接口的“近 7 天”是否应包含今天；其 SQL 使用 `CURDATE()-7` 到 `CURDATE()` 的闭区间。
 - [NEEDS_CONFIRMATION] `operation_security_audit` 的写入事件、保留期、访问者和告警流程。
@@ -316,7 +328,7 @@ npm ci
 npm run build
 ```
 
-本项目当前没有已提交的自动化测试文件或测试框架配置；`tests/` 是为后续建立测试边界而创建的目录。不要把“构建通过”写成“业务测试通过”。
+本项目当前有 44 项已提交的后端 unittest，但没有前端测试框架。日报销售额专项 15 项已通过；完整套件当前有 1 项既有登录限流边界断言失败。不要把“构建通过”写成“业务测试通过”。
 
 ### 目标测试分层
 

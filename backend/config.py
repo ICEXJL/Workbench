@@ -3,7 +3,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# 加载 backend/.env（存在时覆盖环境变量）
+# 加载 backend/.env（仅补充未在系统环境中定义的变量）
+# python-dotenv 默认 override=False，**系统环境变量优先级更高**。
+# 生产环境建议直接用系统环境变量（或 systemd EnvironmentFile），不依赖 .env 文件。
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 # ==================== 数据库配置 ====================
@@ -13,10 +15,8 @@ DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_PORT = os.getenv("DB_PORT", "3306")
 DB_NAME = os.getenv("DB_NAME", "sales_data")
 
-DATABASE_URL = (
-    f"mysql+pymysql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    "?charset=utf8mb4"
-)
+# 注意：不要再用字符串拼接生成 DATABASE_URL。库名可能是中文（如「东南亚运营数据」），
+# 拼接后若被拿去建Engine 会因编码问题出错。连接串统一由 database.URL.create() 构造。
 
 # ==================== 连接池配置（针对多人并发） ====================
 # pool_size 可创建的常驻连接数；max_overflow 超过上限后临时再开的最大连接数
