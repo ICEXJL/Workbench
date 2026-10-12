@@ -72,11 +72,19 @@ AGENTS.md            AI 开发入口
 
 ## 本地启动
 
+> **日常启动照着 [docs/启动指南.md](docs/启动指南.md) 走**，里面有两窗口命令、
+> 停止方法、启动成功的判断标准和常见问题排查。
+> 下面是要点摘要。
+
 环境：Python 3.10+、Node.js、npm，以及有访问权限的 MySQL。仅在可信内网环境使用开发服务。
 
+**两条前提规则**：① 本机系统代理 `127.0.0.1:56975` 会劫持 localhost 请求，
+启动前必须 `unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY`；
+② 前后端要开**两个终端窗口**同时跑。
+
 1. 复制 `backend/.env.example` 为 `backend/.env`，填入数据库连接信息和**随机生成的强 `SECRET_KEY`**（长度 ≥ 32，不能用默认值，否则后端拒绝启动）。`.env` 已被 Git 忽略。
-2. 在 `backend` 执行 `python -m pip install -r requirements.txt`，再执行 `python main.py`。健康检查：`http://127.0.0.1:8000/health`。
-3. 在 `frontend` 执行 `npm ci`，再执行 `npm run dev`。页面地址：`http://localhost:5173/login`。
+2. 后端：在 `backend` 执行 `python main.py`。健康检查：`http://127.0.0.1:8000/health`。
+3. 前端：在 `frontend` 执行 `npm ci`（首次）、`npm run dev`。页面地址：`http://localhost:5173/login`。
 4. 前端构建：`npm run build`。
 
 开发服务器默认监听所有网卡。正式部署必须设置前端实际域名、限制 CORS、关闭不必要的公网入口，并使用安全的凭据管理与 HTTPS。
