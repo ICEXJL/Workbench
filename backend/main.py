@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import config
 from database import init_business_tables
-from routers import auth, reports, sales
+from routers import auth, logistics, reports, sales
 
 app = FastAPI(title="订单管理系统 API", version="1.0.0")
 
@@ -19,6 +19,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(sales.router, prefix="/api/v1")
 app.include_router(reports.router, prefix="/api/v1")
+app.include_router(logistics.router, prefix="/api/v1")
 
 
 @app.on_event("startup")

@@ -8,7 +8,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 database_stub = ModuleType("database")
 database_stub.run_query = lambda *_args, **_kwargs: []
+database_stub.run_execute = lambda *_args, **_kwargs: 0
 sys.modules.setdefault("database", database_stub)
+
+
+def test_logistics_router_exposes_read_only_paths():
+    from routers.logistics import router
+
+    paths = {(route.path, tuple(sorted(route.methods))) for route in router.routes}
+    assert ("/logistics/warehouses", ("GET",)) in paths
+    assert ("/logistics/search", ("GET",)) in paths
 
 
 def test_list_query_terms_accepts_backslash_and_caps_at_twenty():
