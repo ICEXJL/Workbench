@@ -80,7 +80,7 @@
 
 `items` 下的 `warehouses` 是按仓库分组的结果。每个仓库组固定包含 `profile`、`profiles`、`containers`、`replenish`、`shipments` 和 `container_maps`：
 
-- `profile` 是该 SKU/仓库的主产品资料；`profiles` 保留该 SKU/仓库命中的全部产品资料行。
+- `profile` 是按当前结果顺序选出的代表性首个产品资料行；`profiles` 保留该 SKU/仓库命中的全部产品资料行。接口不暗示或定义产品资料之间存在确定的业务优先级。
 - `containers` 是货柜资料行。
 - `replenish` 是补货资料行。
 - `shipments` 是发货资料行。每条发货记录包含 `container_maps`，其中放置通过 `badge_no` 或 `shipment_badge_no` 关联到该发货记录的映射行。
@@ -108,7 +108,7 @@
 4. `logistics_shipment`：发货资料。
 5. `logistics_shipment_container_map`：发货批次与货柜的映射资料。
 
-服务先读取 `logistics_sku` 确定 SKU 与仓库，再对其余四张表分别执行带参数的查询，最后在服务层按 `sku + warehouse` 组装结果。五张业务表之间禁止串联 `JOIN`，以避免一对多数据产生笛卡尔积和重复结果。搜索阶段对五张业务表的查询都带 SKU 条件和仓库条件；全部仓库查询使用允许的空仓库参数表示全部范围。仓库列表接口单独按 `logistics_sku.warehouse` 汇总仓库和 SKU 数量。
+精确查询先在 `logistics_sku` 按 `sku` 或 `custom_sku` 确定结果。产品名 fallback 则先在 `logistics_sku` 按 `product_name` 和 `warehouse` 解析最多 20 个 SKU；随后只对 `logistics_container`、`logistics_replenish`、`logistics_shipment`、`logistics_shipment_container_map` 四张 detail 表分别执行带 `sku + warehouse` 条件的查询，最后在服务层按 `sku + warehouse` 组装结果。五张业务表之间禁止串联 `JOIN`，以避免一对多数据产生笛卡尔积和重复结果。全部仓库查询使用允许的空仓库参数表示全部范围。仓库列表接口单独按 `logistics_sku.warehouse` 汇总仓库和 SKU 数量。
 
 物流查询不接入组织层级范围。所有登录角色都可查看全部仓库，也可切换到单仓范围；前端选择不能替代后端的仓库校验。
 
@@ -118,6 +118,7 @@
 | --- | --- | --- |
 | `400` | `warehouse` 不在仓库列表接口返回的范围内 | `未知仓库: <warehouse>` |
 | `401` | 未登录或认证信息无效 | 由认证依赖返回 |
+| `403` | JWT 有效，但账号仍处于 `mustChangePassword` 状态 | 需先完成首次改密后再访问物流查询 |
 | `422` | 缺少必填参数 `q` 或参数格式无法通过 FastAPI 校验 | 由 FastAPI 返回参数校验详情 |
 | `503` | 物流表缺失、数据库查询失败或物流数据暂时不可用 | `物流数据暂时不可用，请联系管理员` |
 
