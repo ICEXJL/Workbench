@@ -24,3 +24,20 @@ Exact output:
 ```
 
 The tests use monkeypatch-only database doubles; no remote database query or data mutation was performed.
+
+## Reviewer Fixes
+
+Fixed warehouse isolation for missing/empty warehouse rows, validated the warehouse before returning an empty-query result, and added a deterministic SQL `ORDER BY` plus bound `LIMIT 20` to the product-name fallback query.
+
+Test command:
+
+```text
+python -m pytest tests/test_logistics_service.py -q
+```
+
+Exact output:
+
+```text
+........                                                                 [100%]
+8 passed in 0.03s
+```

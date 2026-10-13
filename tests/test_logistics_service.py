@@ -35,12 +35,30 @@ def test_empty_query_returns_empty_shape_without_database_calls(monkeypatch):
         pytest.fail("empty query should not read logistics tables")
 
     monkeypatch.setattr(logistics_service, "run_query", unexpected_query)
+    monkeypatch.setattr(
+        logistics_service,
+        "get_warehouses",
+        lambda: {"warehouses": [], "default_warehouse": None},
+    )
 
     assert logistics_service.search_logistics("  ", None) == {
         "items": [],
         "query": "  ",
         "warehouse": None,
     }
+
+
+def test_search_logistics_rejects_unknown_warehouse_for_empty_query(monkeypatch):
+    from services import logistics_service
+
+    monkeypatch.setattr(
+        logistics_service,
+        "get_warehouses",
+        lambda: {"warehouses": [{"warehouse": "PH-A"}], "default_warehouse": None},
+    )
+
+    with pytest.raises(ValueError, match="仓库"):
+        logistics_service.search_logistics("", "UNKNOWN")
 
 
 def test_search_logistics_keeps_warehouse_in_each_table_query(monkeypatch):
@@ -123,3 +141,68 @@ def test_search_groups_profiles_by_warehouse_and_attaches_maps_to_shipments(monk
     assert [entry["profile"]["stock"] for entry in item["warehouses"]] == [5, 9]
     assert item["warehouses"][0]["shipments"][0]["container_maps"][0]["container_no"] == "C-A"
     assert item["warehouses"][1]["shipments"][0]["container_maps"][0]["container_no"] == "C-B"
+
+
+def test_search_does_not_assign_rows_without_warehouse_to_only_group(monkeypatch):
+    from services import logistics_service
+
+    def fake_query(sql, params=None):
+        normalized = " ".join(sql.split()).lower()
+        if "from logistics_sku" in normalized:
+            return [{"sku": "1001", "warehouse": "PH-A", "product_name": "测试品"}]
+        if "from logistics_shipment_container_map" in normalized:
+            return []
+        if "from logistics_shipment" in normalized:
+            return [
+                {"sku": "1001", "badge_no": "MISSING"},
+                {"sku": "1001", "warehouse": "", "badge_no": "EMPTY"},
+            ]
+        return []
+
+    monkeypatch.setattr(logistics_service, "run_query", fake_query)
+    monkeypatch.setattr(
+        logistics_service,
+        "get_warehouses",
+        lambda: {"warehouses": [], "default_warehouse": None},
+    )
+
+    result = logistics_service.search_logistics("1001", None)
+
+    assert result["items"][0]["warehouses"][0]["shipments"] == []
+
+
+def test_product_name_fallback_limits_rows_in_sql(monkeypatch):
+    from services import logistics_service
+
+    captured = []
+
+    def fake_query(sql, params=None):
+        captured.append((sql, params or {}))
+        normalized = " ".join(sql.split()).lower()
+        if "from logistics_sku" in normalized and "product_name like" not in normalized:
+            return []
+        if "from logistics_sku" in normalized and "product_name like" in normalized:
+            return [{"sku": str(index), "warehouse": "PH-A", "product_name": "测试品"} for index in range(20)]
+        return []
+
+    monkeypatch.setattr(logistics_service, "run_query", fake_query)
+    monkeypatch.setattr(
+        logistics_service,
+        "get_warehouses",
+        lambda: {"warehouses": [{"warehouse": "PH-A"}], "default_warehouse": None},
+    )
+
+    logistics_service.search_logistics("测试", "PH-A")
+
+    product_sql = next(
+        sql for sql, _ in captured
+        if "product_name LIKE" in sql
+    )
+    product_params = next(
+        params for sql, params in captured
+        if "product_name LIKE" in sql
+    )
+    assert "ORDER BY sku, warehouse" in product_sql
+    assert "LIMIT :profile_limit" in product_sql
+    assert "warehouse" in product_sql.lower()
+    assert product_params["profile_limit"] == 20

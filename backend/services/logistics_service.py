@@ -54,12 +54,12 @@ def search_logistics(query: str, warehouse: str | None) -> dict:
         "query": query,
         "warehouse": normalized_warehouse,
     }
-    if not terms:
-        return empty_result
-
     warehouse_data = get_warehouses()
     known_warehouses = _warehouse_names(warehouse_data)
     normalized_warehouse = validate_warehouse(normalized_warehouse, known_warehouses)
+    if not terms:
+        empty_result["warehouse"] = normalized_warehouse
+        return empty_result
 
     profile_rows = _resolve_profiles(terms, normalized_warehouse)
     selected_skus = _select_skus(profile_rows)
@@ -116,8 +116,14 @@ def _resolve_profiles(terms: list[str], warehouse: str | None) -> list[dict]:
               FROM logistics_sku
              WHERE product_name LIKE :product_term
                AND sku IS NOT NULL
-               AND (:warehouse IS NULL OR warehouse = :warehouse)""",
-        {"product_term": f"%{terms[0]}%", "warehouse": warehouse},
+               AND (:warehouse IS NULL OR warehouse = :warehouse)
+             ORDER BY sku, warehouse
+             LIMIT :profile_limit""",
+        {
+            "product_term": f"%{terms[0]}%",
+            "warehouse": warehouse,
+            "profile_limit": 20,
+        },
     )
 
 
@@ -167,7 +173,9 @@ def _group_results(
         sku = _row_value(profile, "sku")
         if sku is None:
             continue
-        warehouse = _row_value(profile, "warehouse") or selected_warehouse
+        warehouse = _warehouse_value(profile)
+        if selected_warehouse is not None and warehouse != selected_warehouse:
+            continue
         sku_groups = grouped.setdefault(sku, OrderedDict())
         warehouse_group = sku_groups.setdefault(
             warehouse,
@@ -260,12 +268,12 @@ def _find_group(
     sku = _row_value(row, "sku")
     if sku not in grouped:
         return None
-    warehouse = _row_value(row, "warehouse") or selected_warehouse
+    warehouse = _warehouse_value(row)
+    if selected_warehouse is not None and warehouse != selected_warehouse:
+        return None
     sku_groups = grouped[sku]
     if warehouse in sku_groups:
         return sku_groups[warehouse]
-    if warehouse is None and len(sku_groups) == 1:
-        return next(iter(sku_groups.values()))
     return None
 
 
@@ -276,3 +284,11 @@ def _badge_no(row: dict) -> Any:
 def _row_value(row: dict, key: str) -> str | None:
     value = row.get(key)
     return str(value) if value is not None else None
+
+
+def _warehouse_value(row: dict) -> str | None:
+    value = row.get("warehouse")
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
