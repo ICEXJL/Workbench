@@ -34,12 +34,11 @@ def test_empty_query_returns_empty_shape_without_database_calls(monkeypatch):
     def unexpected_query(*_args, **_kwargs):
         pytest.fail("empty query should not read logistics tables")
 
+    def unexpected_warehouse_lookup():
+        pytest.fail("empty query without warehouse should not load warehouses")
+
     monkeypatch.setattr(logistics_service, "run_query", unexpected_query)
-    monkeypatch.setattr(
-        logistics_service,
-        "get_warehouses",
-        lambda: {"warehouses": [], "default_warehouse": None},
-    )
+    monkeypatch.setattr(logistics_service, "get_warehouses", unexpected_warehouse_lookup)
 
     assert logistics_service.search_logistics("  ", None) == {
         "items": [],
@@ -182,7 +181,7 @@ def test_product_name_fallback_limits_rows_in_sql(monkeypatch):
         if "from logistics_sku" in normalized and "product_name like" not in normalized:
             return []
         if "from logistics_sku" in normalized and "product_name like" in normalized:
-            return [{"sku": str(index), "warehouse": "PH-A", "product_name": "测试品"} for index in range(20)]
+            return [{"sku": str(index)} for index in range(20)]
         return []
 
     monkeypatch.setattr(logistics_service, "run_query", fake_query)
@@ -202,7 +201,57 @@ def test_product_name_fallback_limits_rows_in_sql(monkeypatch):
         params for sql, params in captured
         if "product_name LIKE" in sql
     )
-    assert "ORDER BY sku, warehouse" in product_sql
+    assert "SELECT DISTINCT sku" in product_sql
+    assert "ORDER BY sku" in product_sql
     assert "LIMIT :profile_limit" in product_sql
     assert "warehouse" in product_sql.lower()
     assert product_params["profile_limit"] == 20
+
+
+def test_product_name_fallback_loads_all_profiles_for_selected_skus(monkeypatch):
+    from services import logistics_service
+
+    captured = []
+
+    def fake_query(sql, params=None):
+        captured.append((sql, params or {}))
+        normalized = " ".join(sql.split()).lower()
+        if "from logistics_sku" not in normalized:
+            return []
+        if "custom_sku" in normalized:
+            return []
+        if "product_name like" in normalized:
+            return [{"sku": "1001"}, {"sku": "1002"}]
+        if "sku in" in normalized:
+            return [
+                {"sku": "1001", "warehouse": "PH-A", "product_name": "测试品"},
+                {"sku": "1001", "warehouse": "PH-B", "product_name": "测试品"},
+                {"sku": "1002", "warehouse": "PH-A", "product_name": "测试品"},
+            ]
+        return []
+
+    monkeypatch.setattr(logistics_service, "run_query", fake_query)
+    monkeypatch.setattr(
+        logistics_service,
+        "get_warehouses",
+        lambda: {
+            "warehouses": [{"warehouse": "PH-A"}, {"warehouse": "PH-B"}],
+            "default_warehouse": None,
+        },
+    )
+
+    result = logistics_service.search_logistics("测试", None)
+
+    assert [entry["warehouse"] for entry in result["items"][0]["warehouses"]] == ["PH-A", "PH-B"]
+    profile_queries = [
+        (sql, params)
+        for sql, params in captured
+        if "FROM logistics_sku" in sql
+        and "sku IN" in sql
+        and "custom_sku" not in sql.lower()
+    ]
+    assert len(profile_queries) == 1
+    profile_sql, profile_params = profile_queries[0]
+    assert "product_name" not in profile_sql.lower()
+    assert "warehouse" in profile_sql.lower()
+    assert set(profile_params) >= {"profile_sku_0", "profile_sku_1", "warehouse"}

@@ -54,6 +54,9 @@ def search_logistics(query: str, warehouse: str | None) -> dict:
         "query": query,
         "warehouse": normalized_warehouse,
     }
+    if not terms and normalized_warehouse is None:
+        return empty_result
+
     warehouse_data = get_warehouses()
     known_warehouses = _warehouse_names(warehouse_data)
     normalized_warehouse = validate_warehouse(normalized_warehouse, known_warehouses)
@@ -111,19 +114,34 @@ def _resolve_profiles(terms: list[str], warehouse: str | None) -> list[dict]:
     if len(terms) != 1:
         return []
 
-    return run_query(
-        """SELECT *
+    matching_sku_rows = run_query(
+        """SELECT DISTINCT sku
               FROM logistics_sku
              WHERE product_name LIKE :product_term
                AND sku IS NOT NULL
                AND (:warehouse IS NULL OR warehouse = :warehouse)
-             ORDER BY sku, warehouse
+             ORDER BY sku
              LIMIT :profile_limit""",
         {
             "product_term": f"%{terms[0]}%",
             "warehouse": warehouse,
             "profile_limit": 20,
         },
+    )
+    selected_skus = [_row_value(row, "sku") for row in matching_sku_rows]
+    selected_skus = [sku for sku in selected_skus if sku is not None]
+    if not selected_skus:
+        return []
+
+    profile_placeholders, profile_params = _bind_values("profile_sku", selected_skus)
+    profile_params["warehouse"] = warehouse
+    return run_query(
+        f"""SELECT *
+              FROM logistics_sku
+             WHERE sku IN ({profile_placeholders})
+               AND (:warehouse IS NULL OR warehouse = :warehouse)
+             ORDER BY sku, warehouse""",
+        profile_params,
     )
 
 
