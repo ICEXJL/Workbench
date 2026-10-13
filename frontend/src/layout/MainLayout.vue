@@ -6,6 +6,11 @@
         <div><strong>Operations</strong><span>SEA COMMAND CENTER</span></div>
       </div>
       <nav class="nav-list" aria-label="主导航">
+        <p class="nav-section">跨境工作台</p>
+        <button v-for="item in logisticsNav" :key="item.key" class="nav-item" :class="{ active: activeKey === item.key }" @click="go(item.key)">
+          <span class="nav-icon" v-html="item.icon"></span>
+          <span class="nav-copy"><strong>{{ item.label }}</strong><small>{{ item.caption }}</small></span>
+        </button>
         <p class="nav-section">经营分析</p>
         <button v-for="item in primaryNav" :key="item.key" class="nav-item" :class="{ active: activeKey === item.key }" @click="go(item.key)">
           <span class="nav-icon" v-html="item.icon"></span>
@@ -107,6 +112,9 @@ const basePrimaryNav = [
   { key: 'stats7d', label: '趋势分析', caption: '近 7 天经营趋势', roles: ['admin'], icon: icon('<path d="M4 19V5M4 19h16M7 15l4-4 3 2 5-6"/>') },
   { key: 'statsdaily', label: '分布洞察', caption: '区域与仓库结构', roles: ['admin'], icon: icon('<path d="M12 3a9 9 0 1 0 9 9h-9V3Z"/><path d="M16 3.9A9 9 0 0 1 20.1 8H16V3.9Z"/>') },
 ]
+const logisticsNav = [
+  { key: 'logistics-search', label: '物流查询', caption: '库存与出货追踪', icon: icon('<path d="M4 6h16v12H4z"/><path d="M8 10h8M8 14h5"/>') },
+]
 const baseSecondaryNav = [
   { key: 'report-targets', label: '月度目标', caption: '配置销售与上架目标', roles: ['admin'], icon: icon('<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M12 7v5l3 2"/>') },
   { key: 'manage', label: '人员目录', caption: '角色与部门信息', roles: ['admin'], icon: icon('<path d="M4 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM18 8v6M15 11h6"/>') }
@@ -116,7 +124,7 @@ const secondaryNav = computed(() => baseSecondaryNav.filter(item => !item.roles 
 const activeKey = computed(() => route.name || 'daily')
 const userInitial = computed(() => (authStore.realName || authStore.username || 'O').slice(0, 1).toUpperCase())
 const roleLabel = computed(() => ({admin:'管理端',manager:'主管',leader:'组长',operator:'运营'}[authStore.role] || '运营'))
-const currentSection = computed(() => activeKey.value === 'manage' ? 'ORGANIZATION' : 'ANALYTICS')
+const currentSection = computed(() => activeKey.value === 'logistics-search' ? 'CROSS-BORDER' : (activeKey.value === 'manage' ? 'ORGANIZATION' : 'ANALYTICS'))
 function go(key) { mobileNavOpen.value = false; router.push({ name: key }) }
 function refreshPage() { window.location.reload() }
 function logout() { authStore.logout(); router.push('/login') }

@@ -7,6 +7,7 @@ const routes = [
     component: () => import('@/layout/MainLayout.vue'),
     children: [
       { path: '', redirect: '/daily' },
+      { path: 'logistics/search', name: 'logistics-search', component: () => import('@/views/logistics/LogisticsSearch.vue'), meta: { title: '物流查询' } },
       { path: 'daily', name: 'daily', component: () => import('@/views/dashboard/DailySales.vue'), meta: { title: '经营总览' } },
       { path: 'personnel', name: 'personnel', component: () => import('@/views/dashboard/PersonnelSales.vue'), meta: { title: '人员销售' } },
       { path: 'report/submit', name: 'report-submit', component: () => import('@/views/report/DailyReportForm.vue'), meta: { title: '提交运营日报', roles: ['operator', 'leader', 'manager'] } },

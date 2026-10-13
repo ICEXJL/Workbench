@@ -66,3 +66,12 @@ export function getComplianceOverview(params) {
 export function saveMonthlyTarget(data) {
   return request.post('/report/target', data)
 }
+
+// ---- 物流查询 ----
+export function getLogisticsWarehouses() {
+  return request.get('/logistics/warehouses')
+}
+
+export function searchLogistics(params) {
+  return request.get('/logistics/search', { params })
+}
