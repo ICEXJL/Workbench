@@ -5,6 +5,11 @@
 import bcrypt
 
 from database import run_execute, run_query
+from services.permission_scope import (
+    MANAGER_ALIAS_IDS_SQL,
+    MANAGER_ALIAS_NAMES_SQL,
+    MANAGER_IDENTITY_IDS_SQL,
+)
 
 ADMIN_USERS = {"boss", "boos", "xiangjinglv", "lichuxiong"}
 
@@ -83,6 +88,7 @@ def change_password(username: str, current_password: str, new_password: str) -> 
 
 def _scope_clause(user: dict, alias: str = "p") -> tuple[str, dict]:
     role, operator_id = user["role"], int(user["userId"])
+    normalized_owner = f"REPLACE(TRIM({alias}.yy), '代维护', '')"
     own_names = """SELECT canonical.real_name
         FROM operator canonical
         WHERE canonical.id=:scope_id
@@ -95,32 +101,63 @@ def _scope_clause(user: dict, alias: str = "p") -> tuple[str, dict]:
     if role == "admin":
         return "", {}
     if role == "manager":
-        return f""" AND {alias}.yy IN (
+        own_names = f"""{own_names}
+            UNION
+            {MANAGER_ALIAS_NAMES_SQL}"""
+        return f""" AND {normalized_owner} IN (
             SELECT o.real_name
             FROM org_hierarchy h JOIN operator o ON o.id=h.operator_id
-            WHERE h.manager_id=:scope_id AND o.status=1
+            WHERE (h.manager_id IN ({MANAGER_IDENTITY_IDS_SQL})
+                   OR h.leader_id IN ({MANAGER_ALIAS_IDS_SQL}))
+              AND h.operator_id NOT IN ({MANAGER_ALIAS_IDS_SQL})
+              AND o.status=1
             UNION
             {own_names}
         )""", {"scope_id": operator_id}
     if role == "leader":
-        return f""" AND {alias}.yy IN (
+        return f""" AND {normalized_owner} IN (
             SELECT o.real_name
             FROM org_hierarchy h JOIN operator o ON o.id=h.operator_id
             WHERE h.leader_id=:scope_id AND o.status=1
             UNION
             {own_names}
         )""", {"scope_id": operator_id}
-    return f" AND {alias}.yy IN ({own_names})", {"scope_id": operator_id}
+    return f" AND {normalized_owner} IN ({own_names})", {"scope_id": operator_id}
 
 
-# ==================== 东南亚每日销售 ====================
-def get_daily_sales(user: dict, target_date: str, store: str | None, page: int, page_size: int) -> dict:
+# ==================== 每日销售 ====================
+# 注意：2026-10-16 起不再按 dp_ry.qy 过滤区域。
+# dp_ry 实际有 5 个区域（东南亚1058/ TH 230 / MY 189 / BR 6 / 墨西哥4 店铺），
+# 原先硬编码 qy='东南亚' 会导致 MY/TH 等区的组员（如罗莉娅的覃美娟、马欢）查不到数据。
+# 现改为不限区域，可见范围完全由 _scope_clause 的权限逻辑决定。
+def daily_sales_sort_clause(sort_by: str, sort_order: str) -> str:
+    columns = {
+        "xse": "CAST(NULLIF(TRIM(d.xse), '') AS DECIMAL(20,4))",
+        "dds": "CAST(NULLIF(TRIM(d.dds), '') AS DECIMAL(20,4))",
+    }
+    metric = sort_by if sort_by in columns else "xse"
+    primary = columns[metric]
+    secondary = columns["dds"] if metric == "xse" else columns["xse"]
+    direction = "ASC" if str(sort_order).lower() == "asc" else "DESC"
+    return f"{primary} {direction}, {secondary} DESC, d.dpbh ASC"
+
+
+def get_daily_sales(
+    user: dict,
+    target_date: str,
+    store: str | None,
+    page: int,
+    page_size: int,
+    sort_by: str = "xse",
+    sort_order: str = "desc",
+) -> dict:
     scope_sql, scope_params = _scope_clause(user)
     store_sql = " AND d.dpbh=:store" if store else ""
-    visibility = f"EXISTS (SELECT 1 FROM dp_ry p WHERE p.qy='东南亚' AND p.dpbh=d.dpbh{scope_sql})"
+    visibility = f"EXISTS (SELECT 1 FROM dp_ry p WHERE p.dpbh=d.dpbh{scope_sql})"
     params = {**scope_params, "target_date": target_date, "store": store, "limit": page_size, "offset": (page - 1) * page_size}
+    order_clause = daily_sales_sort_clause(sort_by, sort_order)
     items = run_query(
-        f"SELECT d.dpbh,d.dds,d.xse,d.ckh,d.rq FROM dny_data d WHERE d.rq=:target_date AND {visibility}{store_sql} ORDER BY d.xse DESC,d.dpbh LIMIT :limit OFFSET :offset",
+        f"SELECT d.dpbh,d.dds,d.xse,d.ckh,d.rq FROM dny_data d WHERE d.rq=:target_date AND {visibility}{store_sql} ORDER BY {order_clause} LIMIT :limit OFFSET :offset",
         params,
     )
     total = run_query(f"SELECT COUNT(*) total FROM dny_data d WHERE d.rq=:target_date AND {visibility}{store_sql}", params)[0]["total"]
@@ -136,7 +173,7 @@ def get_daily_sales(user: dict, target_date: str, store: str | None, page: int, 
     return {"items": items, "total": total, "page": page, "page_size": page_size, "summary": summary, "stores": [row["dpbh"] for row in stores]}
 
 
-# ==================== 东南亚店铺人员销售情况表 ====================
+# ==================== 店铺人员销售情况表 ====================
 def get_personnel_sales(user: dict, cxrq_str: str, department: str | None, group: str | None, operator: str | None, page: int, page_size: int) -> dict:
     scope_sql, scope_params = _scope_clause(user, "p")
     filters = scope_sql
@@ -160,7 +197,7 @@ def get_personnel_sales(user: dict, cxrq_str: str, department: str | None, group
       ON d.dpbh=p.dpbh
       AND d.rq BETWEEN DATE_FORMAT(STR_TO_DATE(:cxrq,'%Y-%m-%d') - INTERVAL 6 DAY,'%Y-%m-%d')
       AND DATE_FORMAT(STR_TO_DATE(:cxrq,'%Y-%m-%d') - INTERVAL 0 DAY,'%Y-%m-%d')"""
-    where_sql = f"WHERE p.qy='东南亚'{filters}"
+    where_sql = f"WHERE p.yy IS NOT NULL AND TRIM(p.yy)<>''{filters}"
     select_sql = f"""SELECT
       GROUP_CONCAT(DISTINCT p.jc ORDER BY p.jc SEPARATOR '、') jc,
       GROUP_CONCAT(DISTINCT p.zm ORDER BY p.zm SEPARATOR '、') zm,
@@ -172,7 +209,7 @@ def get_personnel_sales(user: dict, cxrq_str: str, department: str | None, group
       {from_sql} {where_sql} GROUP BY p.yy"""
     total = run_query(f"SELECT COUNT(DISTINCT p.yy) total {from_sql} {where_sql}", params)[0]["total"]
     items = run_query(f"{select_sql} ORDER BY total_sales DESC,yy LIMIT :limit OFFSET :offset", params)
-    options = run_query(f"SELECT DISTINCT p.jc,p.zm,p.yy FROM dp_ry p WHERE p.qy='东南亚'{scope_sql} ORDER BY p.jc,p.zm,p.yy", scope_params)
+    options = run_query(f"SELECT DISTINCT p.jc,p.zm,p.yy FROM dp_ry p WHERE p.yy IS NOT NULL AND TRIM(p.yy)<>''{scope_sql} ORDER BY p.jc,p.zm,p.yy", scope_params)
     return {"items": items, "total": total, "page": page, "page_size": page_size, "options": options}
 
 
