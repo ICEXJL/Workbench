@@ -19,6 +19,10 @@ export function getPersonnelSales(params) {
   return request.get('/sales/personnel', { params })
 }
 
+export function getPersonnelStoreSales(operatorName, targetDate) {
+  return request.get('/sales/personnel-stores', { params: { operator_name: operatorName, target_date: targetDate } })
+}
+
 // ---- 7天统计 ----
 export function getRegionalStats() {
   return request.get('/sales/stats/regional')
@@ -44,7 +48,13 @@ export function getManagement() {
 
 // ---- 运营日报 ----
 export function getMyDailyReport(reportDate) {
-  return request.get('/report/daily/mine', { params: { report_date: reportDate } })
+  return request.get('/report/daily/mine', {
+    params: { report_date: reportDate, include_sales_summary: false },
+  })
+}
+
+export function getMyDailySalesSummary(reportDate) {
+  return request.get('/report/daily/mine/sales-summary', { params: { report_date: reportDate } })
 }
 
 export function submitDailyReport(data) {

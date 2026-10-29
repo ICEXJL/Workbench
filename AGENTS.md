@@ -6,7 +6,7 @@
 
 ### 项目是什么
 
-这是一个面向东南亚跨境电商运营团队的内部经营数据工作台。当前系统将登录认证、按权限查询销售数据、运营日报填报与查看、月度目标配置、趋势/分布分析和人员目录集中到一个 Vue + FastAPI 应用中。
+这是一个面向跨境电商运营团队的内部经营数据工作台。当前系统将登录认证、按权限查询销售数据、运营日报填报与查看、月度目标配置、趋势/分布分析、人员目录和跨境物流查询集中到一个 Vue + FastAPI 应用中。
 
 ### 解决的业务问题
 
@@ -14,10 +14,11 @@
 - 让运营、组长、主管和管理端看到与其组织范围匹配的店铺、人员销售和日报数据。
 - 将本月累计销售额、月度目标和完成率放到填报流程中，减少人工核对。
 - 提供东南亚店铺日销售、人员近 7 日销售、区域/平台趋势和昨日分布视图。
+- 提供按 SKU、产品名和仓库查询的物流工作台，展示真实柜号、柜级轨迹、补货记录和海运发货记录。
 
 ### 当前阶段
 
-截至 2026-10-08，项目仍处于开发验收阶段，不应视为已完成的生产系统。**安全 P0 与权限 P0 已于 2026-10-06 落地并实测闭环**（bcrypt 明文比对已清除、登录限流、越权审计、5 个管理端接口 admin 守卫、SECRET_KEY 弱值启动校验）。RBAC 已同日完成四角色实测验收：admin/leader/operator/manager 接口矩阵 36/36 符合预期，店铺、人员、日报三层范围隔离均验证为真实服务端过滤（leader 28 店铺为 admin 1009 家的严格子集、独有 0），越权专项 8 项全部被拦下，审计表实有 33 条 `deny_role_required`。当前真实剩余风险：日报列表缺部门/店铺/状态筛选、`/report/daily` 后端不返回未提交人员、`org_hierarchy` 调整后无回归测试、范围变更无 CI 守护、业务口径待确认。仓库仍无 CI/CD、无数据库迁移/回滚脚本、无 Docker/反向代理配置，后端有 44 项单元测试但完整套件当前有 1 项既有登录限流边界失败，前端无自动化测试。
+截至 2026-10-19，项目仍处于开发验收阶段，不应视为已完成的生产系统。安全与权限 P0 已落地并实测闭环；最新销售范围修复移除了固定 `qy='东南亚'` 条件，补充了 MY/TH 等组织范围回归测试。物流查询代码、API 文档和前端测试已加入，但柜号字段升级、物流 ETL 重载和生产数据核对仍需管理员执行。仓库仍无 CI/CD、无版本化数据库迁移/回滚脚本、无 Docker/反向代理配置；后端 pytest 当前 82 项中 81 项通过，前端 Node 测试 16 项通过，另有 1 项既有限流边界断言失败。
 
 ### 核心用户
 
@@ -30,9 +31,9 @@
 
 ### Git context
 
-当前分支为 `main`，HEAD 为 `0da52f6`（`docs: 补齐规格、任务记录与 AI 流程文档`），提交历史为 `0da52f6` → `22959a3`（安全 P0 + ECharts 按需引入）→ `d304506` → `4b84024`。
+当前分支为 `main`，已知基线提交为 `02018b5`（`fix(sales): 移除 qy='东南亚' 硬编码，修复组长查不到 MY/TH 区组员`）；工作区可能另有未提交的代码和文档变更。每次任务开始必须重新运行 `git status --short --branch`，不要依赖本段快照。
 
-远程仓库**已配置**：`origin` = `https://github.com/ICEXJL/Workbench.git`（2026-10-06 设为公开）。本地提交**尚未推送** —— 本机代理 `127.0.0.1:56975` 对 `github.com:443` 的 CONNECT 返回 502（`api.github.com` 不受影响），需在代理白名单放行 `github.com` 后执行 `git push -u origin main`。
+远程仓库**已配置**：`origin` = `https://github.com/ICEXJL/Workbench.git`。仓库可见性和推送权限以 GitHub 当前设置为准；不得在文档中记录数据库密码、JWT 密钥、Token 或真实连接信息。
 
 `.idea/`、`.workbuddy/`、`.playwright-mcp/` 等本地目录已在 `.gitignore` 中排除，**不得提交**。每次任务开始仍必须重新运行 `git status --short`，不要依赖本段快照。
 
@@ -47,7 +48,7 @@
 | API | REST 风格 FastAPI，统一业务前缀 `/api/v1`，健康检查 `/health`，自动 OpenAPI `/openapi.json` | 路由位于 `backend/routers/`；前端 Axios `baseURL` 为 `/api/v1`。 |
 | 构建 | `npm run dev`、`npm run build`、`npm run preview`；后端直接运行 `python main.py` | Vite 开发代理 `/api` 和 `/health` 到 `127.0.0.1:8000`。 |
 | 部署 | README/维护指南描述为 Nginx/宝塔提供 `frontend/dist`，Uvicorn 单独监听后端端口 | 仓库内没有 Dockerfile、docker-compose、Nginx 配置或进程管理配置；生产部署细节需以实际服务器配置为准。 |
-| 测试 | `tests/` 下有 44 项后端 unittest；没有前端测试框架配置 | 日报销售额专项 15 项通过；完整套件当前有 1 项登录限流边界断言失败。另有接口冒烟、四角色实测和 Word 验收记录。 |
+| 测试 | `tests/` 下由 pytest 收集 82 项后端测试；`frontend/tests/` 有 16 项 Node 内置测试 | 后端 81 项通过、1 项既有限流边界断言失败；前端 16 项通过。另有接口冒烟、四角色实测和 Word 验收记录。 |
 
 已确认的当前验证命令：
 
@@ -71,12 +72,12 @@ npm run build
 │   ├── database.py             SQLAlchemy Engine、只读/写入 helper、启动表检查
 │   ├── routers/                HTTP 路由、参数校验入口和权限入口
 │   ├── schemas/                Pydantic 请求/响应模型
-│   └── services/               认证辅助、权限范围、销售与日报业务 SQL
+│   └── services/               认证辅助、权限范围、销售、日报和物流业务 SQL
 ├── frontend/                   Vue 单页应用
 │   ├── src/main.js             应用装配
 │   ├── src/router/              路由与前端角色守卫
 │   ├── src/layout/              工作台壳、导航、用户菜单和改密弹窗
-│   ├── src/views/               登录、销售、统计、日报、目标和人员目录页面
+│   ├── src/views/               登录、销售、统计、日报、目标、人员目录和物流页面
 │   ├── src/services/            Axios API 封装
 │   ├── src/stores/              Pinia 登录身份状态
 │   ├── src/components/          可复用 Vue 组件（当前主要是 ECharts 包装器）
@@ -86,7 +87,8 @@ npm run build
 ├── specs/                      经确认的功能/接口/数据/安全规格
 ├── tasks/                      单次 AI 开发任务记录、验收标准和结果
 ├── docs/                       API、部署、数据字典、ADR 和运维说明
-├── tests/                      后端单元/集成、API 和前端端到端测试
+├── tests/                      后端 pytest 单元/集成/API 测试
+├── frontend/tests/             前端 Node 内置纯函数测试
 ├── .ai/                        AI 执行流程、规则和上下文入口
 ├── sales-bi-refactor-prd/      早期静态设计/重构 PRD 展示稿，不是运行时代码
 ├── README.md                   项目基线、启动方式、风险与发布门槛
@@ -129,9 +131,9 @@ Vue 3 页面 / Vue Router / Pinia / Ant Design Vue / ECharts
   ↓ Axios（/api/v1，自动带 Bearer JWT）
 FastAPI main.py
   ↓ 路由依赖 get_current_user（JWT 解码、首登改密限制）
-routers/auth.py | routers/sales.py | routers/reports.py
+routers/auth.py | routers/sales.py | routers/reports.py | routers/logistics.py
   ↓
-services/sales_service.py | services/report_service.py
+services/sales_service.py | services/report_service.py | services/logistics_service.py
   ↓ SQLAlchemy text() + Engine 连接池
 MySQL 业务表
 ```
@@ -163,9 +165,16 @@ operator + org_hierarchy + dp_ry 计算可见运营/店铺范围
 
 - `dny_data` 提供日期、店铺、订单量、销售额和仓库等日销售事实。
 - `dp_ry` 把店铺映射到运营、组别、部门、区域和仓库，并被用于范围过滤与人员销售聚合。
-- `/sales/daily` 先按日期、可见店铺和可选店铺过滤，再返回分页行、总数、汇总和可选店铺。
+- `/sales/daily` 默认按昨天查询；前端默认发送昨天到昨天的日期范围，支持快捷周度、本月、上月和自定义日期范围，均按闭区间聚合店铺。接口先按可见店铺范围过滤，再返回分页行、总数、汇总和可选店铺。
 - `/sales/personnel` 按所选基准日当天及之前 6 天（共 7 天）聚合运营人员的店铺表现，后端分页，前端缓存页。
 - `/sales/stats/*`、`/sales/distribution/*` 和 `/sales/management` 的 service 查询使用全量口径，但路由层已统一限制为 `admin`；如果未来开放给其他角色，必须先补齐可见范围参数和回归测试。
+
+### 物流查询数据流
+
+- `/logistics/warehouses` 读取 `logistics_sku` 汇总可选仓库；`/logistics/search` 按 SKU、定制 SKU、产品名和仓库解析结果。
+- `logistics_sku`、`logistics_container`、`logistics_replenish`、`logistics_shipment` 和 `logistics_shipment_container_map` 分开查询，再在 service 层按 SKU + 仓库组装，避免一对多 JOIN 放大结果。
+- 货柜卡使用 ETL 写入的 `container_no`；柜级海运备货量按同 SKU、仓库和装柜/给货日期匹配 `EMITTED.qty2`。补货记录只保留近两个月且无数据时隐藏。
+- 物流查询是登录用户可用的只读能力，不接入组织销售范围；数据库升级 SQL 和 ETL 重载不由 FastAPI 启动自动执行。
 
 ### 日报数据流
 
@@ -184,7 +193,7 @@ operator + org_hierarchy + dp_ry 计算可见运营/店铺范围
 | `/auth/login` | POST | 用户名密码登录并签发 JWT | 公开入口；失败返回 401 |
 | `/auth/change-password` | POST | 当前用户修改密码并换发 Token | 需要当前 Token；首次改密例外放行 |
 | `/auth/me` | GET | 返回 JWT 身份 | 需要 Bearer Token |
-| `/sales/daily` | GET | 昨日/指定日期店铺日销售分页 | 后端按角色和东南亚店铺范围过滤 |
+| `/sales/daily` | GET | 昨天/指定日期范围店铺销售分页 | 后端按角色和组织映射范围过滤；按闭区间店铺聚合 |
 | `/sales/personnel` | GET | 前 7 天人员/店铺销售分页 | 后端按角色过滤，支持部门/组/运营筛选 |
 | `/sales/stats/regional`、`/sales/stats/platform` | GET | 近 7 日区域/平台趋势 | **已挂 `require_roles("admin")`**（2026-10-06），leader 实测 403；service 仍未接收用户范围，全量口径仅对 admin 开放 |
 | `/sales/distribution/region`、`/sales/distribution/warehouse` | GET | 昨日区域/仓库分布 | 路由层仅允许 `admin`；service 使用全量口径 |
@@ -194,6 +203,8 @@ operator + org_hierarchy + dp_ry 计算可见运营/店铺范围
 | `/report/target` | GET/POST | 读取/保存运营月度目标 | POST 仅 admin；GET 检查目标运营在可见范围 |
 | `/report/people` | GET | 返回当前权限范围的有效运营 | 用于日报列表补齐和目标选择 |
 | `/report/compliance` | GET | 管理范围内合规指标和人员 | `operator` 返回 403；其他角色按组织范围聚合 |
+| `/logistics/warehouses` | GET | 返回可用发货仓库及 SKU 数量 | 所有登录角色可读 |
+| `/logistics/search` | GET | 查询 SKU/产品、货柜轨迹、补货和海运记录 | 所有登录角色可读；只读，不执行导入 |
 | `/health` | GET | 服务健康检查 | 不在 `/api/v1`；Vite/Nginx 应代理到 FastAPI |
 | `/openapi.json` | GET | FastAPI 自动生成契约 | 可用于接口审阅，不替代手写 API 文档 |
 
@@ -207,11 +218,16 @@ operator + org_hierarchy + dp_ry 计算可见运营/店铺范围
 | `operator` | 人员主档、姓名、角色、部门、启用状态 | `sales_service`、`report_service` |
 | `dp_ry` | 店铺-运营映射、区域、组、部门、仓库 | 销售范围、人员销售、部门补齐 |
 | `org_hierarchy` | 主管/组长与运营的组织关系及部门备用值 | 日报/销售范围 |
-| `dny_data` | 东南亚店铺每日订单量、销售额、仓库和日期 | 销售与统计 service |
+| `dny_data` | 店铺每日订单量、销售额、仓库和日期 | 销售与统计 service |
 | `daily_report` | 运营日报字段、方向化店铺波动和提交时间 | `report_service` |
 | `target_monthly` | 运营按月份的销售/上架目标 | `report_service` |
 | `name_roles_apt` | 人员目录展示字段 `name`、`roles`、`apt` | `get_personnel_management` |
 | `operation_security_audit` | 安全审计表 | **已投入使用**：`services/audit_service.py` 写入 `deny_role_required`、`login_failed`、`login_blocked_account`、`login_blocked_ip` 等事件，写入失败不影响业务 |
+| `logistics_sku` | 物流 SKU、产品、仓库和库存档案 | `logistics_service` |
+| `logistics_container` | 货柜信息、真实柜号、装柜/到仓状态和轨迹 | `logistics_service` |
+| `logistics_replenish` | 近两个月补货记录 | `logistics_service` |
+| `logistics_shipment` | 未发货/已发货海运记录及数量 | `logistics_service` |
+| `logistics_shipment_container_map` | 发货批次与货柜映射 | `logistics_service` |
 
 应用当前没有 ORM 模型或版本化迁移目录，表结构由既有 MySQL 业务库提供，启动函数只做少量幂等检查/新增字段。
 
@@ -239,7 +255,7 @@ FastAPI startup 会调用 `init_business_tables()`：检查并可能向 `denglu`
 
 1. 角色值当前为 `admin`、`manager`、`leader`、`operator`。
 2. `admin` 可见启用的全部 `operator`；`manager` 通过 `org_hierarchy.manager_id` 看名下人员并包含自己；`leader` 通过 `org_hierarchy.leader_id` 看组内人员并包含自己；`operator` 只看自己。
-3. 销售范围还必须通过 `dp_ry` 的东南亚区域和运营姓名/店铺映射过滤；新增人员或组织关系后要同时核对 `operator.status`、`org_hierarchy`、`dp_ry.yy`。
+3. 销售范围还必须通过 `dp_ry` 的区域和运营姓名/店铺映射过滤；当前销售 SQL 不再硬编码 `qy='东南亚'`，新增人员或组织关系后要同时核对 `operator.status`、`org_hierarchy`、`dp_ry.yy`。
 4. 前端角色菜单和路由守卫不是授权边界，后端必须返回 401/403 并做数据范围过滤。
 
 ### 认证和密码
@@ -251,9 +267,16 @@ FastAPI startup 会调用 `init_business_tables()`：检查并可能向 `denglu`
 
 ### 销售查询
 
-1. 经营总览默认查询昨天；每页由后端限制在 10–100 行，返回 `items`、`total`、分页信息、汇总和店铺选项。
+1. 经营总览默认查询昨天至昨天；快捷周度、本月、上月和自定义范围均按闭区间汇总。每页由后端限制在 10–100 行，返回 `items`、`total`、分页信息、汇总和店铺选项。
 2. 人员销售默认以昨天为查询基准日，统计该日及之前 6 天；`dd7/xs7` 是基准日，`dd1/xs1` 是最早一天。其他趋势统计接口是否包含当天仍需单独确认。
 3. 前端页面展示 USD，但应用层不读取汇率。销售源数据的币种、退款/取消/测试订单是否计入必须由业务确认。
+
+### 物流查询
+
+1. 所有登录角色都可以查询物流；查询参数必须经过后端仓库列表校验，前端选择器不是授权边界。
+2. 真实柜号由物流导入器从源数据 J 列货代文本提取，应用不会在查询时从 Excel 读取柜号。
+3. 柜级海运备货数量读取匹配的 `logistics_shipment.qty2`；`logistics_replenish.sea_qty` 只用于补货记录表，不能重复作为每个货柜的数量。
+4. `container_no` 字段和复合主键升级必须先执行 `docs/2026-10-15-logistics-container-no.sql`，再运行 ETL；该 SQL 非幂等，应用启动不会自动执行。
 
 ### 日报
 
@@ -262,7 +285,7 @@ FastAPI startup 会调用 `init_business_tables()`：检查并可能向 `denglu`
 3. 周度字段（周延迟/取消、周商责差评链接、周错发/破损链接）只允许周二填写；非周二由接口拒绝非空输入。
 4. 备货审核及时率代码只在周一和周三采集，其他日期保留已存在值，首次提交按 100% 记录。该采集日安排需业务再次确认。
 5. 上涨/下滑店铺数量必须分别等于对应名称数量；数据库旧的总浮动数量字段继续兼容，未分类历史数据不得伪造方向。
-6. 日报销售额由服务端从 `dny_data.xse` 按运营全部 `dp_ry` 店铺自动汇总，日期列为 `dny_data.rq`；统计从当月 1 日到日报日，且 `dny_data` 全表最新日期必须达到日报日，否则不展示金额并阻止提交。不得回退到 `fbs_data`。页面完成率使用此金额与当月目标计算；提交后保存到 `daily_report.monthly_sales` 快照。
+6. 日报销售额由服务端从 `dny_data.xse` 按运营全部 `dp_ry` 店铺自动汇总，日期列为 `dny_data.rq`；统计从当月 1 日到日报日。不得回退到 `fbs_data`。水位已覆盖且映射可用时保存计算金额；无店铺映射或水位未就绪时，日报仍可提交，新建日报将 `0.00` 保存到 `daily_report.monthly_sales`，更新日报则保留已有销售额快照。销售源查询错误或金额格式异常仍报错。页面目标进度和日报列表使用已保存快照。
 7. 月度目标按运营和月份 upsert，保存仅限 `admin`；目标缺失时前端不计算有效完成率并提示联系管理端。
 
 ### 明确未确认的业务口径
@@ -328,14 +351,14 @@ npm ci
 npm run build
 ```
 
-本项目当前有 44 项已提交的后端 unittest，但没有前端测试框架。日报销售额专项 15 项已通过；完整套件当前有 1 项既有登录限流边界断言失败。不要把“构建通过”写成“业务测试通过”。
+当前验证基线为：`python -m pytest -q` 收集 82 项，81 项通过、1 项既有限流剩余秒数边界断言失败；`node --test frontend/tests/*.test.js` 收集 16 项且全部通过。物流后端专项测试 15 项通过。不要把“构建通过”写成“业务测试通过”。
 
 ### 目标测试分层
 
 - `tests/unit/`：service 的范围计算、字段映射、日报校验和纯函数；使用 fixture/mock，不连接生产库。
 - `tests/api/`：FastAPI TestClient/HTTP 契约，覆盖 `/health`、OpenAPI、401/403、请求校验、upsert 和响应结构。
 - `tests/integration/`：使用隔离 MySQL schema 或受控测试数据库验证 SQL、索引和事务；禁止写入真实业务库。
-- `frontend`：当前未配置 Vitest/Playwright；在引入测试框架前先建立前端测试 Spec。至少覆盖登录守卫、401/403 拦截、日报表单和分页筛选。
+- `frontend`：当前使用 Node 内置测试覆盖销售排序和物流纯函数；尚未配置 Vitest/Playwright，仍需补登录守卫、401/403 拦截、日报表单和页面流程测试。
 - 浏览器验收：四角色登录、日报提交/覆盖、目标配置、跨组访问、统计页限制和生产 SPA 刷新；真实凭据和脏数据不能进入仓库。
 
 ### API 冒烟基线

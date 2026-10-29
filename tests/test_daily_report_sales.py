@@ -1,12 +1,12 @@
 import sys
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import patch
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
@@ -26,7 +26,7 @@ class CumulativeSalesTests(unittest.TestCase):
         self.report_date = date(2026, 9, 28)
 
     @patch("services.report_service.run_query")
-    def test_sums_all_mapped_shops_from_month_start_through_report_date(self, run_query):
+    def test_sums_all_mapped_shops_then_applies_75_percent_factor(self, run_query):
         run_query.side_effect = [
             [{"dpbh": "SHOP-A"}, {"dpbh": "SHOP-B"}],
             [{"latest_date": "2026-09-29"}],
@@ -43,7 +43,7 @@ class CumulativeSalesTests(unittest.TestCase):
         result = report_service.get_cumulative_sales(17, self.report_date)
 
         self.assertEqual(result["status"], "available")
-        self.assertEqual(result["amount"], Decimal("14.50"))
+        self.assertEqual(result["amount"], Decimal("10.88"))
         self.assertEqual(result["currency"], "USD")
         self.assertEqual(result["period_start"], "2026-09-01")
         self.assertEqual(result["period_end"], "2026-09-28")
@@ -82,9 +82,21 @@ class CumulativeSalesTests(unittest.TestCase):
         result = report_service.get_cumulative_sales(17, self.report_date)
 
         self.assertEqual(result["status"], "available")
-        self.assertEqual(result["amount"], Decimal("10.20"))
+        self.assertEqual(result["amount"], Decimal("7.65"))
         self.assertEqual(result["period_end"], "2026-09-28")
         self.assertEqual(run_query.call_args_list[2].args[1]["period_end"], "2026-09-28")
+
+    @patch("services.report_service.run_query")
+    def test_applies_factor_before_rounding_to_cents(self, run_query):
+        run_query.side_effect = [
+            [{"dpbh": "SHOP-A"}],
+            [{"latest_date": "2026-09-28"}],
+            [{"dpbh": "SHOP-A", "rq": "2026-09-28", "xse": "1.01"}],
+        ]
+
+        result = report_service.get_cumulative_sales(17, self.report_date)
+
+        self.assertEqual(result["amount"], Decimal("0.76"))
 
     @patch("services.report_service.run_query")
     def test_source_more_than_one_day_behind_returns_no_amount(self, run_query):
@@ -168,16 +180,45 @@ class CumulativeSalesTests(unittest.TestCase):
             ).cumulative_sales
         )
 
+    @patch("routers.reports.report_service.get_report", return_value=None)
     @patch("routers.reports.report_service.save_report")
     @patch("routers.reports.report_service.get_cumulative_sales")
-    @patch("routers.reports.report_service.get_report", return_value={"stocking_audit_rate": 100})
-    def test_submit_ignores_forged_client_amount_and_uses_server_amount(
-        self, _get_report, get_cumulative_sales, save_report
+    def test_submit_saves_zero_without_waiting_for_sales_summary(
+        self, get_cumulative_sales, save_report, _get_report
     ):
-        get_cumulative_sales.return_value = {
-            "status": "available",
-            "amount": Decimal("14.50"),
-        }
+        save_report.return_value = {"submitted_at": "2026-09-29T12:00:00"}
+        payload = DailyReportPayload(
+            report_date=date.today(),
+            listing_count=0,
+            optimization_count=0,
+            violation_triggered=False,
+            infringement_triggered=False,
+            stocking_audit_rate=100,
+            reverse_product_count=0,
+            all_issues_resolved=True,
+        )
+        background_tasks = BackgroundTasks()
+
+        result = report_routes.submit_daily_report(
+            payload, background_tasks, {"userId": "17", "role": "operator"}
+        )
+
+        self.assertEqual(result["message"], "提交成功")
+        self.assertEqual(save_report.call_args.args[1]["cumulative_sales"], Decimal("0.00"))
+        self.assertEqual(len(background_tasks.tasks), 1)
+        get_cumulative_sales.assert_not_called()
+
+    @patch("routers.reports.report_service.update_sales_snapshot")
+    @patch("routers.reports.report_service.save_report")
+    @patch("routers.reports.report_service.get_report", return_value={
+        "cumulative_sales": Decimal("12.34"), "stocking_audit_rate": 100
+    })
+    @patch("routers.reports.report_service.get_cumulative_sales", return_value={
+        "status": "available", "amount": Decimal("10.88")
+    })
+    def test_submit_ignores_client_amount_and_refreshes_authoritative_value_in_background(
+        self, get_cumulative_sales, _get_report, save_report, update_sales_snapshot
+    ):
         save_report.return_value = {"submitted_at": "2026-09-29T12:00:00"}
         payload = DailyReportPayload(
             report_date=date.today(),
@@ -190,15 +231,26 @@ class CumulativeSalesTests(unittest.TestCase):
             reverse_product_count=0,
             all_issues_resolved=True,
         )
+        background_tasks = BackgroundTasks()
 
-        report_routes.submit_daily_report(payload, {"userId": "17", "role": "operator"})
+        report_routes.submit_daily_report(
+            payload, background_tasks, {"userId": "17", "role": "operator"}
+        )
 
-        self.assertEqual(save_report.call_args.args[1]["cumulative_sales"], Decimal("14.50"))
+        self.assertEqual(save_report.call_args.args[1]["cumulative_sales"], Decimal("12.34"))
+        get_cumulative_sales.assert_not_called()
+        background_tasks.tasks[0].func(*background_tasks.tasks[0].args)
+        update_sales_snapshot.assert_called_once_with(17, date.today(), Decimal("10.88"))
 
+    @patch("routers.reports.report_service.get_report", return_value={
+        "cumulative_sales": Decimal("12.34"), "stocking_audit_rate": Decimal("100.00")
+    })
     @patch("routers.reports.report_service.save_report")
-    @patch("routers.reports.report_service.get_cumulative_sales")
-    def test_submit_is_blocked_until_source_date_is_ready(self, get_cumulative_sales, save_report):
-        get_cumulative_sales.return_value = {"status": "not_ready", "amount": None}
+    @patch("routers.reports.report_service.get_cumulative_sales", side_effect=SQLAlchemyError("source unavailable"))
+    def test_sales_source_failure_does_not_block_submit_or_overwrite_saved_snapshot(
+        self, get_cumulative_sales, save_report, _get_report
+    ):
+        save_report.return_value = {"submitted_at": "2026-09-29T12:00:00"}
         payload = DailyReportPayload(
             report_date=date.today(),
             listing_count=0,
@@ -209,12 +261,17 @@ class CumulativeSalesTests(unittest.TestCase):
             reverse_product_count=0,
             all_issues_resolved=True,
         )
+        background_tasks = BackgroundTasks()
 
-        with self.assertRaises(HTTPException) as raised:
-            report_routes.submit_daily_report(payload, {"userId": "17", "role": "operator"})
+        result = report_routes.submit_daily_report(
+            payload, background_tasks, {"userId": "17", "role": "operator"}
+        )
+        self.assertEqual(result["message"], "提交成功")
+        self.assertEqual(save_report.call_args.args[1]["cumulative_sales"], Decimal("12.34"))
 
-        self.assertEqual(raised.exception.status_code, 409)
-        save_report.assert_not_called()
+        with self.assertLogs("routers.reports", level="ERROR"):
+            background_tasks.tasks[0].func(*background_tasks.tasks[0].args)
+        get_cumulative_sales.assert_called_once_with(17, date.today())
 
     @patch("routers.reports.report_service.get_cumulative_sales", side_effect=SQLAlchemyError("source unavailable"))
     @patch("routers.reports.report_service.get_target", return_value=None)
@@ -229,9 +286,53 @@ class CumulativeSalesTests(unittest.TestCase):
         self.assertEqual(result["sales_summary"]["source"], "dny_data")
         self.assertIsNone(result["sales_summary"]["amount"])
 
+    @patch("routers.reports.report_service.get_cumulative_sales")
+    @patch("routers.reports.report_service.get_target", return_value=None)
+    @patch("routers.reports.report_service.get_report", return_value=None)
+    def test_form_data_can_load_without_waiting_for_sales_summary(
+        self, _get_report, _get_target, get_cumulative_sales
+    ):
+        result = report_routes.my_daily_report(
+            date.today(),
+            {"userId": "17", "role": "operator"},
+            include_sales_summary=False,
+        )
+
+        self.assertIsNone(result["report"])
+        self.assertEqual(result["sales_summary"]["status"], "pending")
+        get_cumulative_sales.assert_not_called()
+
+    @patch("routers.reports.report_service.get_cumulative_sales", return_value={"status": "mapping_missing", "amount": None})
+    @patch("routers.reports.report_service.get_target", return_value=None)
+    @patch("routers.reports.report_service.get_report", return_value=None)
+    def test_sales_summary_can_be_loaded_separately(self, _get_report, _get_target, get_cumulative_sales):
+        result = report_routes.my_daily_sales_summary(
+            date.today(), {"userId": "17", "role": "operator"}
+        )
+
+        self.assertEqual(result["status"], "mapping_missing")
+        self.assertIsNone(result["amount"])
+        get_cumulative_sales.assert_called_once_with(17, date.today())
+
+    @patch("routers.reports.report_service.get_cumulative_sales")
+    @patch("routers.reports.report_service.get_target", return_value=None)
+    @patch("routers.reports.report_service.get_report")
+    def test_past_report_keeps_its_saved_sales_snapshot(
+        self, get_report, _get_target, get_cumulative_sales
+    ):
+        report_date = date.today() - timedelta(days=1)
+        get_report.return_value = {"cumulative_sales": Decimal("14.50")}
+
+        result = report_routes.my_daily_report(report_date, {"userId": "17", "role": "operator"})
+
+        self.assertEqual(result["sales_summary"]["amount"], Decimal("14.50"))
+        self.assertEqual(result["sales_summary"]["source"], "daily_report")
+        self.assertEqual(result["sales_summary"]["status"], "snapshot")
+        get_cumulative_sales.assert_not_called()
+
     @patch("routers.reports.report_service.save_report")
     @patch("routers.reports.report_service.get_cumulative_sales", side_effect=SQLAlchemyError("source unavailable"))
-    def test_submit_does_not_write_when_sales_source_fails(self, _get_cumulative_sales, save_report):
+    def test_sales_source_failure_is_deferred_until_after_submit(self, get_cumulative_sales, save_report):
         payload = DailyReportPayload(
             report_date=date.today(),
             listing_count=0,
@@ -243,11 +344,16 @@ class CumulativeSalesTests(unittest.TestCase):
             all_issues_resolved=True,
         )
 
-        with self.assertRaises(HTTPException) as raised:
-            report_routes.submit_daily_report(payload, {"userId": "17", "role": "operator"})
+        background_tasks = BackgroundTasks()
+        result = report_routes.submit_daily_report(
+            payload, background_tasks, {"userId": "17", "role": "operator"}
+        )
 
-        self.assertEqual(raised.exception.status_code, 503)
-        save_report.assert_not_called()
+        self.assertEqual(result["message"], "提交成功")
+        self.assertEqual(save_report.call_args.args[1]["cumulative_sales"], Decimal("0.00"))
+        with self.assertLogs("routers.reports", level="ERROR"):
+            background_tasks.tasks[0].func(*background_tasks.tasks[0].args)
+        get_cumulative_sales.assert_called_once_with(17, date.today())
 
 
 if __name__ == "__main__":

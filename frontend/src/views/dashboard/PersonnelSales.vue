@@ -34,9 +34,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
+import { Popover } from 'ant-design-vue'
 import dayjs from 'dayjs'
-import { getPersonnelSales } from '@/services/api'
+import { getPersonnelSales, getPersonnelStoreSales } from '@/services/api'
 
 const loading = ref(false)
 const cxrq = ref(dayjs().subtract(1, 'day').format('YYYY-MM-DD'))
@@ -52,6 +53,7 @@ const jcList = computed(() => [...new Set(options.value.map((d) => String(d.jc))
 const jc = ref('全部')
 const zm = ref('全部')
 const yy = ref('全部')
+const popoverState = ref({ key: '', operator: '', date: '', open: false, locked: false, loading: false, items: [] })
 
 const zmList = computed(() => {
   const filtered = options.value.filter((d) => jc.value === '全部' || String(d.jc) === jc.value)
@@ -105,13 +107,52 @@ const columns = computed(() => {
           key: `xs${n}`,
           width: 120,
           align: 'right',
-          customRender: ({ text }) => formatMoney(text),
+          customRender: ({ text, record }) => renderSalesCell(text, record.yy, dayHeaders.value[idx] ? dayjs(cxrq.value).subtract(idx, 'day').format('YYYY-MM-DD') : cxrq.value),
         },
       ],
     })
   })
   return [...base, ...dayCols]
 })
+
+function renderSalesCell(value, operator, date) {
+  const key = `${operator}|${date}`
+  const state = popoverState.value
+  const content = () => h('div', { class: 'sales-popover-card' }, [
+    h('div', { class: 'sales-popover-head' }, [h('strong', {}, operator), h('span', {}, date), h('button', { class: 'sales-popover-close', onClick: () => closePopover() }, '×')]),
+    state.loading && state.key === key ? h('div', { class: 'sales-popover-loading' }, '加载中…') : h('div', {}, [
+      h('div', { class: 'sales-popover-total' }, [h('span', {}, formatMoney(value)), h('span', {}, `${formatInteger(state.items.reduce((sum, item) => sum + Number(item.total_orders || 0), 0))} 单`)]),
+      h('div', { class: 'sales-popover-list' }, [
+        h('div', { class: 'sales-store-header' }, [h('span', {}, '店铺'), h('span', {}, '销售额'), h('span', {}, '占比')]),
+        ...(state.key === key ? state.items : []).map((item, index) => {
+          const totalSales = state.items.reduce((sum, store) => sum + Number(store.total_sales || 0), 0)
+          const share = totalSales > 0 ? Number(item.total_sales || 0) / totalSales * 100 : 0
+          return h('div', { class: 'sales-store-row', key: item.dpbh }, [
+            h('span', { class: 'sales-store-bar', style: { width: `${Math.min(100, share)}%` } }),
+            h('span', { class: 'sales-store-rank' }, String(index + 1)),
+            h('span', { class: 'sales-store-name' }, item.dpbh),
+            h('span', { class: 'sales-store-sales' }, formatMoney(item.total_sales)),
+            h('span', { class: 'sales-store-share' }, `${share.toFixed(1)}%`),
+          ])
+        }),
+      ])
+    ])
+  ])
+  return h(Popover, { trigger: 'hover', open: state.key === key ? state.open : undefined, placement: 'bottom', overlayClassName: 'personnel-sales-popover', onOpenChange: (open) => handlePopoverOpen(open, operator, date, key) }, { default: () => h('span', { class: 'sales-cell-trigger', onClick: () => lockPopover(operator, date, key) }, [formatMoney(value), h('span', { class: 'sales-cell-caret' }, '▾')]), content })
+}
+
+async function handlePopoverOpen(open, operator, date, key) {
+  if (!open && popoverState.value.locked) return
+  if (!open) { popoverState.value = { ...popoverState.value, open: false }; return }
+  popoverState.value = { key, operator, date, open: true, locked: false, loading: true, items: [] }
+  try { popoverState.value = { ...popoverState.value, loading: false, items: (await getPersonnelStoreSales(operator, date)).items || [] } } catch { popoverState.value = { ...popoverState.value, loading: false } }
+}
+function lockPopover(operator, date, key) {
+  if (popoverState.value.key === key && popoverState.value.locked) { closePopover(); return }
+  popoverState.value = { key, operator, date, open: true, locked: true, loading: true, items: [] }
+  getPersonnelStoreSales(operator, date).then((data) => { if (popoverState.value.key === key) popoverState.value = { ...popoverState.value, loading: false, items: data.items || [] } }).catch(() => { if (popoverState.value.key === key) popoverState.value = { ...popoverState.value, loading: false } })
+}
+function closePopover() { popoverState.value = { key: '', operator: '', date: '', open: false, locked: false, loading: false, items: [] } }
 
 const pagination = computed(() => ({
   current: page.value,
@@ -217,3 +258,71 @@ function formatMoney(value) {
 
 onMounted(load)
 </script>
+
+<style>
+.sales-cell-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #1677ff;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  transition: background-color .15s ease, text-decoration-color .15s ease;
+}
+.sales-cell-trigger:hover {
+  background: #e6f4ff;
+  text-decoration-color: #1677ff;
+}
+.sales-cell-caret {
+  color: #1677ff;
+  font-size: 11px;
+  line-height: 1;
+}
+.personnel-sales-popover .ant-popover-inner {
+  padding: 0;
+  border-radius: 12px;
+}
+.sales-popover-card {
+  width: 430px;
+  padding: 16px;
+}
+.sales-popover-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 15px;
+}
+.sales-popover-head strong { font-size: 20px; }
+.sales-popover-head span { color: #666; }
+.sales-popover-close {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: #999;
+  font-size: 22px;
+  cursor: pointer;
+}
+.sales-popover-total {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 14px 0;
+  font-size: 14px;
+  color: #777;
+}
+.sales-popover-total span:first-child { font-size: 28px; color: #222; }
+.sales-popover-list { border-top: 1px solid #eee; padding-top: 8px; max-height: 310px; overflow: auto; }
+.sales-store-header { display: grid; grid-template-columns: 1fr 110px 52px; gap: 8px; padding: 0 4px 6px 34px; color: #999; font-size: 12px; }
+.sales-store-row { position: relative; display: grid; grid-template-columns: 26px 1fr 110px 52px; gap: 8px; align-items: center; padding: 8px 4px; overflow: hidden; }
+.sales-store-bar { position: absolute; z-index: 0; inset: 2px auto 2px 0; max-width: calc(100% - 70px); background: #dcecff; border-radius: 6px; pointer-events: none; }
+.sales-store-rank { color: #999; }
+.sales-store-rank, .sales-store-name, .sales-store-sales, .sales-store-share { position: relative; z-index: 1; }
+.sales-store-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sales-store-sales, .sales-store-share { color: #444; font-variant-numeric: tabular-nums; text-align: right; }
+.sales-store-share { color: #999; }
+.sales-popover-loading { padding: 28px 0; text-align: center; color: #999; }
+</style>

@@ -50,7 +50,7 @@
 - **REQ-012-09**：所有业务接口必须校验 JWT；无 Token 或 Token 失效返回 `401`。
 - **REQ-012-10**：首次登录（`mustChangePassword=true`）除 `/auth/me` 与 `/auth/change-password` 外一律返回 `403 PASSWORD_CHANGE_REQUIRED`。
 - **REQ-012-11**：销售类查询必须在服务端按角色注入范围条件，不得依赖前端过滤。
-- **REQ-012-12**：`/sales/daily` 默认返回昨日；支持指定日期、店铺筛选、服务端分页（10–100 条/页），并返回 `items`、`total`、`summary`、`stores`。
+- **REQ-012-12**：`/sales/daily` 默认返回昨日；支持指定日期、闭区间日期范围、店铺筛选、服务端分页（10–100 条/页），并返回 `items`、`total`、`summary`、`stores`。日期范围模式按店铺聚合订单量和销售额。
 - **REQ-012-13**：`/sales/personnel` 按基准日当天及前 6 天（共 7 天）聚合，按运营汇总并降序排名；不得展示个人级或跨运营合计列。
 - **REQ-012-14**：`/report/daily` POST 仅允许非admin 且仅允许 `report_date` 等于服务器当日；admin 返回 `403`。
 - **REQ-012-15**：同一 `(operator_id, report_date)` 重复提交必须更新同一条记录（upsert），不得插入重复行。
@@ -63,10 +63,10 @@
 ## Business Rules
 
 - **BR-012-01**：登录主体唯一来源为 JWT `userId`；任何接口不得以请求参数切换主体。
-- **BR-012-02**：角色可见运营范围（`report_service.visible_operator_ids`）：`admin` = 全部 `status=1`；`manager` = `org_hierarchy.manager_id` 匹配 ∪ 本人；`leader` = `org_hierarchy.leader_id` 匹配 ∪ 本人；`operator` = 仅本人。`org_hierarchy.effective_from/to` 存在但当前查询未启用时间过滤。
+- **BR-012-02**：角色可见运营范围（`report_service.visible_operator_ids`）：`admin` = 全部 `status=1`；普通 `manager` = `org_hierarchy.manager_id` 匹配 ∪ 本人；`leader` = `org_hierarchy.leader_id` 匹配 ∪ 本人；`operator` = 仅本人。若 manager 的标准账号存在同名下划线后缀身份，则额外合并这些身份作为 `manager_id` 的关系，以及后缀身份作为 `leader_id` 的关系；标准账号本人保留，后缀身份行不作为运营成员重复展示。组织归属仍以 `org_hierarchy` 为准，不要求为账号别名改表或复制账号；其他主管（例如陈丽莎）仍只按其自身 `manager_id` 关系授权。`org_hierarchy.effective_from/to` 存在但当前查询未启用时间过滤。
 - **BR-012-03**：店铺可见性（`sales_service._scope_clause`）按 `dp_ry.yy` 匹配运营姓名，并以 `operator.real_name` 为标准名，同时兼容 `real_name LIKE '标准名\_%'` 的历史别名（`status=0`）；`admin` 不加条件。
 - **BR-012-04**：`dp_ry.qy='东南亚'` 为店铺可见性的必要条件；日报销售额口径则**不过滤** `qy` / `fbs`（承接 SPEC-011 BR-016）。两处口径差异是既定设计，不得互相套用。
-- **BR-012-05**：累计销售额 = 当前运营全部映射店铺（`dpbh` 去重）在 `dny_data` 中 `rq` 落在月初至 `report_date`（含）的 `SUM(xse)`；`dds` 为订单数量，不作为销售额。
+- **BR-012-05**：日报累计销售额 = 当前运营全部映射店铺（`dpbh` 去重）在 `dny_data` 中 `rq` 落在月初至 `report_date`（含）的 `SUM(xse) * 75%`，再按 USD 美分四舍五入；`dds` 为订单数量，不作为销售额。目标完成率、新提交快照与日报列表使用同一调整后金额，历史快照不回填。
 - **BR-012-06**：以 `dny_data` 全表 `MAX(rq)` 为同步水位；水位未达 `report_date` 时不计算金额，POST 返回 `409`。
 - **BR-012-07**：`daily_report` 唯一键 `(operator_id, report_date)`；`monthly_sales` 为提交时快照，历史记录不随 `dny_data` 变化重算。
 - **BR-012-08**：周度字段（`weekly_delay_exceeded`、`weekly_bad_review_links`、`weekly_wrong_damage_links`）仅允许 `report_date.weekday() == 1`（周二）提交；非周二提交且携带任一周度字段返回 `422`。
@@ -187,9 +187,9 @@
 
 ## Acceptance Criteria
 
-- **AC-012-01**：以 `operator` 身份登录，其可见店铺集合严格等于 `dp_ry` 中 `yy` 匹配本人（含历史别名）的店铺，且 `qy='东南亚'`；不含他人店铺。
+- **AC-012-01**：以 `operator` 身份登录，其可见店铺集合严格等于 `dp_ry` 中 `yy` 匹配本人（含历史别名和“代维护”后缀归一化）的店铺，且 `qy='东南亚'`；不含他人店铺。
 - **AC-012-02**：以 `leader` / `manager` 登录，可见运营集合等于 BR-012-02 定义集合；改写 URL 中的 `operator_id` 不改变返回范围。
-- **AC-012-03**：`/sales/daily` 默认返回昨日，分页 `total` 与筛选条件一致，`summary` 为全可见范围汇总（不受分页影响）。
+- **AC-012-03**：`/sales/daily` 默认返回昨日，分页 `total` 与筛选条件一致，`summary` 为全可见范围汇总（不受分页影响）；提供日期范围时，`total` 和 `items` 均按店铺聚合。
 - **AC-012-04**：`/sales/personnel` 结果按运营聚合降序，区间恰为基准日及前 6 天，不含个人级明细列。
 - **AC-012-05**：非 admin 提交他人或非当日日报被拒：admin → `403`；非当日 → `403`。
 - **AC-012-06**：同一天连续两次 POST，`daily_report` 中该 `(operator_id, report_date)` 仍为 1 行，`submitted_at` 更新，`monthly_sales` 为服务端复算值。
@@ -204,6 +204,7 @@
 - **AC-012-15**：同一账号 5 分钟内登录失败达 5 次后返回 `429`，且审计表记录失败事件。
 - **AC-012-16**：修改请求中的 `operator_id`、姓名或 `userId` 均不能读取或写入他人数据，主体恒为有效 JWT `userId`。
 - **AC-012-17**：四个角色各自登录后，页面可见店铺数与 `dp_ry` 只读抽样一致（须以权威店铺清单核对后断言）。
+- **AC-012-18**：标准账号 `xiayi` 的可见运营集合包含 `_N` 的主管关系和 `_W` 的组长关系所关联的有效运营，不包含后缀身份作为重复成员；陈丽莎的可见范围保持等于 `manager_id=187` 关系与本人，销售页面仍按 `dp_ry.qy='东南亚'` 过滤店铺。
 
 ## Test Cases
 
@@ -224,7 +225,7 @@
 | Requirement | Business Rule | API/UI | Acceptance | Tests |
 | --- | --- | --- | --- | --- |
 | REQ-012-09、REQ-012-10 | BR-012-01 | 全部接口 | AC-012-16 | TEST-012-01 |
-| REQ-012-11 | BR-012-02、BR-012-03、BR-012-04 | API-012-01 | AC-012-01、AC-012-02、AC-012-17 | TEST-012-01 |
+| REQ-012-02、REQ-012-11 | BR-012-02、BR-012-03、BR-012-04 | API-012-01 | AC-012-01、AC-012-02、AC-012-17、AC-012-18 | TEST-012-01 |
 | REQ-012-12、REQ-012-13 | BR-012-03 | `/sales/daily`、`/sales/personnel` | AC-012-03、AC-012-04、AC-012-11 | TEST-012-11 |
 | REQ-012-14、REQ-012-15 | BR-012-07、BR-012-08、BR-012-09、BR-012-10、BR-012-11 | API-012-02 | AC-012-05、AC-012-06、AC-012-08、AC-012-09 | TEST-012-04、TEST-012-05 |
 | REQ-012-16 | BR-012-05、BR-012-06、BR-012-07 | API-012-03、API-012-04、UI-012-03 | AC-012-07、AC-012-10、AC-012-11 | TEST-012-06、TEST-012-07、TEST-012-08 |

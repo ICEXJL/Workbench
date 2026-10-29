@@ -1,4 +1,6 @@
-# EnjoyOurs 东南亚运营平台 - 现状 PRD 清单
+# EnjoyOurs 东南亚运营平台 - 历史现状 PRD 清单
+
+> 本文件为 2026-09-10 的历史审计基线，不是当前实现规格。当前代码、接口、物流模块、权限范围和测试状态请以 [README.md](README.md)、[DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md)、`docs/API_*.md`、[docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) 及运行代码为准。文中未列出的后续能力（包括跨境物流查询、真实柜号和柜级海运备货数）不代表当前不存在。
 
 版本：现状审计稿 v0.1  
 日期：2026-09-10  

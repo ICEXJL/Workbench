@@ -68,6 +68,7 @@ class TestVisibleOperatorIds(unittest.TestCase):
         self.assertEqual(ids, [1, 2, 3])
         sql = q.call_args[0][0]
         self.assertIn("status=1", sql)
+        self.assertIn("role <> 'admin'", sql)
         self.assertNotIn("manager_id", sql)
 
     def test_manager_scoped_to_manager_id_with_self(self):
@@ -76,9 +77,26 @@ class TestVisibleOperatorIds(unittest.TestCase):
             ids = report_service.visible_operator_ids(user("manager", 156))
         self.assertEqual(ids, [5, 6])
         sql = q.call_args[0][0]
-        self.assertIn("h.manager_id=:id", sql)
-        self.assertIn("UNION SELECT :id", sql)  # 必须包含自身
-        self.assertEqual(q.call_args[0][1], {"id": 156})
+        self.assertIn("h.manager_id IN", sql)
+        self.assertIn("UNION SELECT :scope_id", sql)  # 必须包含自身
+        self.assertEqual(q.call_args[0][1], {"scope_id": 156})
+
+    def test_xiayi_manager_inherits_alias_leader_scope_without_listing_aliases(self):
+        rows = [
+            {"id": 12}, {"id": 39}, {"id": 42}, {"id": 46},
+            {"id": 48}, {"id": 102}, {"id": 124}, {"id": 209}, {"id": 219},
+        ]
+        xiayi = user("manager", 48, "夏伊")
+        with mock.patch.object(report_service, "run_query", return_value=rows) as q:
+            ids = report_service.visible_operator_ids(xiayi)
+
+        self.assertEqual(ids, [12, 39, 42, 46, 48, 102, 124, 209, 219])
+        sql = q.call_args.args[0]
+        self.assertIn("h.manager_id IN", sql)
+        self.assertIn("h.leader_id IN", sql)
+        self.assertIn("h.operator_id NOT IN", sql)
+        self.assertIn("canonical.real_name", sql)
+        self.assertEqual(q.call_args.args[1], {"scope_id": 48})
 
     def test_leader_scoped_to_leader_id_with_self(self):
         rows = [{"id": 7}, {"id": 8}]
@@ -127,6 +145,63 @@ class TestSaveReportIdentityBinding(unittest.TestCase):
             )
         self.assertEqual(captured["operator_id"], 77,
                          "operator_id 必须来自 JWT，不能来自请求体")
+
+
+class TestDailyReportManagementRoleFiltering(unittest.TestCase):
+    """日报范围不应包含不参与填报的 admin 管理端账号。"""
+
+    def test_visible_people_filters_admin_role(self):
+        with mock.patch.object(report_service, "visible_operator_ids", return_value=[1, 2]), \
+             mock.patch.object(report_service, "run_query", return_value=[]) as q:
+            report_service.visible_people(user("admin", 99))
+
+        sql = q.call_args.args[0]
+        self.assertIn("o.role <> 'admin'", sql)
+
+    def test_list_reports_filters_admin_role(self):
+        with mock.patch.object(report_service, "visible_operator_ids", return_value=[1, 2]), \
+             mock.patch.object(report_service, "run_query", return_value=[]) as q:
+            report_service.list_reports(user("admin", 99), "2026-10-13", "2026-10-13")
+
+        sql = q.call_args.args[0]
+        self.assertIn("o.role <> 'admin'", sql)
+
+    def test_visible_people_exposes_group_for_report_filters(self):
+        people = [{
+            "id": 1,
+            "real_name": "测试运营",
+            "department": "武汉部",
+            "group_name": "武汉一组",
+            "role": "operator",
+        }]
+        with mock.patch.object(report_service, "visible_operator_ids", return_value=[1]), \
+             mock.patch.object(report_service, "run_query", return_value=people) as q:
+            result = report_service.visible_people(user("admin", 99))
+
+        self.assertEqual(result[0]["group_name"], "武汉一组")
+        sql = q.call_args.args[0]
+        self.assertIn("group_name", sql)
+
+    def test_list_reports_applies_department_and_group_filters(self):
+        """筛选必须在服务端应用，不能只过滤前端当前页。
+
+        实现走 `filtered_operator_ids`：先按权限范围取可见 id，
+        再用部门/组别收窄，因此断言的是「筛选参数被正确交给范围函数」，
+        而不是具体 SQL 文本 —— 后者会与实现方式过度耦合。
+        """
+        with mock.patch.object(report_service, "filtered_operator_ids",
+                               return_value=[1, 2]) as filtered, \
+             mock.patch.object(report_service, "run_query", return_value=[]):
+            report_service.list_reports(
+                user("admin", 99),
+                "2026-10-13",
+                "2026-10-13",
+                department="武汉部",
+                group="武汉一组",
+            )
+
+        filtered.assert_called_once_with(
+            mock.ANY, department="武汉部", group="武汉一组")
 
 
 class TestRouteRoleDeclarations(unittest.TestCase):
@@ -193,6 +268,25 @@ class TestScopeAlgorithmParity(unittest.TestCase):
         for role in ("admin", "manager", "leader"):
             self.assertIn(role, sales_src, f"sales_service 缺少 {role} 分支")
             self.assertIn(role, report_src, f"report_service 缺少 {role} 分支")
+
+    def test_manager_sales_scope_inherits_alias_leader_assignments(self):
+        from services import sales_service
+
+        sql, params = sales_service._scope_clause(user("manager", 48, "夏伊"))
+
+        self.assertIn("h.manager_id IN", sql)
+        self.assertIn("h.leader_id IN", sql)
+        self.assertIn("canonical.real_name", sql)
+        self.assertIn("alias.real_name", sql)
+        self.assertEqual(params, {"scope_id": 48})
+
+    def test_sales_scope_normalizes_maintenance_owner_names(self):
+        from services import sales_service
+
+        sql, params = sales_service._scope_clause(user("manager", 48, "夏伊"))
+
+        self.assertIn("REPLACE(TRIM(p.yy), '代维护', '') IN", sql)
+        self.assertEqual(params, {"scope_id": 48})
 
 
 if __name__ == "__main__":

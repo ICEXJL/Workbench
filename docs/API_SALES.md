@@ -1,5 +1,13 @@
 # 销售接口说明
 
+## 经营总览店铺销售
+
+`GET /api/v1/sales/daily`
+
+默认查询昨天的数据；前端以 `start_date=昨天`、`end_date=昨天` 初始化。支持 `start_date`、`end_date`、`store`、`page`、`page_size`、`sort_by` 和 `sort_order`，按闭区间聚合每个可见店铺的订单量和销售额。日期范围必须使用 `YYYY-MM-DD`，且开始日期不能晚于结束日期；`target_date` 仅保留为旧客户端兼容参数。前端提供周度汇总（昨天及往前 6 天）、本月汇总（本月 1 日至昨天）和上月汇总快捷按钮，点击后会同步更新日期范围。
+
+范围查询返回的 `items` 按店铺聚合，`ckh` 为该店铺涉及的仓库列表，响应额外返回 `period_start` 与 `period_end`。`summary` 始终对应完整筛选范围，不受分页影响；`stores` 只包含当前用户权限范围内、在该时间范围有数据的店铺。权限过滤在后端执行。
+
 ## 运营人员近 7 日销售
 
 `GET /api/v1/sales/personnel`
@@ -15,3 +23,9 @@
 - `options`：权限范围内可用的部门、组别和运营筛选项。
 
 `total_sales` 是当前运营名下各店铺账号的 7 日合计；不展示跨运营总额或个人合计列。
+
+## 人员销售自定义日期与店铺明细
+
+`GET /api/v1/sales/personnel` 支持 `start_date`、`end_date`，两者必须同时提供，按闭区间汇总；未提供时保留旧客户端的 `cxrq` 七日查询兼容行为。当前人员销售页面默认传入昨天至昨天，返回 `total_orders`、`total_sales` 和按区间天数计算的 `avg_sales`。
+
+`GET /api/v1/sales/personnel/{operator_name}/stores` 返回该运营在权限范围内名下的全部店铺，支持 `start_date`、`end_date`。店铺即使在日期范围内没有销售记录也会返回，订单数和销售额为 0；结果按销售额、订单数降序及店铺编号升序排列。接口复用后端组织范围校验，不能通过前端参数查看越权运营。

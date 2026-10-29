@@ -1,6 +1,7 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from routers.auth import get_current_user, require_roles
 from services import sales_service
@@ -19,11 +20,35 @@ def yesterday_str() -> str:
 def daily_sales(
     target_date: str | None = None,
     store: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=10, le=100),
+    sort_by: Literal["xse", "dds"] = Query("xse"),
+    sort_order: Literal["asc", "desc"] = Query("desc"),
     user: dict = Depends(get_current_user),
 ):
-    return sales_service.get_daily_sales(user, target_date or yesterday_str(), store, page, page_size)
+    if (start_date is None) != (end_date is None):
+        raise HTTPException(status_code=422, detail="start_date 和 end_date 必须同时提供")
+    if start_date and end_date:
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="日期必须使用 YYYY-MM-DD 格式") from exc
+        if start > end:
+            raise HTTPException(status_code=422, detail="start_date 不能晚于 end_date")
+    return sales_service.get_daily_sales(
+        user,
+        target_date or yesterday_str(),
+        store,
+        page,
+        page_size,
+        sort_by,
+        sort_order,
+        start_date,
+        end_date,
+    )
 
 
 @router.get("/personnel")
@@ -37,6 +62,15 @@ def personnel_sales(
     user: dict = Depends(get_current_user),
 ):
     return sales_service.get_personnel_sales(user, cxrq or yesterday_str(), department, group, operator, page, page_size)
+
+
+@router.get("/personnel-stores")
+def personnel_store_sales(
+    operator_name: str,
+    target_date: str | None = None,
+    user: dict = Depends(get_current_user),
+):
+    return sales_service.get_personnel_store_sales(user, operator_name, target_date or yesterday_str())
 
 
 @router.get("/stats/regional")
@@ -67,3 +101,4 @@ def warehouse_distribution(user: dict = Depends(admin_only)):
 def personnel_management(user: dict = Depends(admin_only)):
     """人员管理列表。"""
     return sales_service.get_personnel_management()
+

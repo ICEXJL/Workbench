@@ -3,6 +3,9 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from database import run_execute, run_query
+from services.permission_scope import MANAGER_ALIAS_IDS_SQL, MANAGER_IDENTITY_IDS_SQL
+
+CUMULATIVE_SALES_FACTOR = Decimal("0.75")
 
 
 class CumulativeSalesDataError(ValueError):
@@ -33,16 +36,26 @@ def _decode_report(row: dict) -> dict:
 def visible_operator_ids(user: dict) -> list[int]:
     operator_id, role = int(user["userId"]), user["role"]
     if role == "admin":
-        rows = run_query("SELECT id FROM operator WHERE status=1")
+        rows = run_query("SELECT id FROM operator WHERE status=1 AND role <> 'admin'")
     elif role == "manager":
-        rows = run_query("""SELECT DISTINCT h.operator_id AS id
+        rows = run_query(f"""WITH manager_aliases (operator_id) AS (
+                {MANAGER_ALIAS_IDS_SQL}
+            ), manager_identities (operator_id) AS (
+                SELECT :scope_id
+                UNION SELECT manager_aliases.operator_id FROM manager_aliases
+            )
+            SELECT DISTINCT h.operator_id AS id
             FROM org_hierarchy h JOIN operator o ON o.id=h.operator_id
-            WHERE h.manager_id=:id AND o.status=1
-            UNION SELECT :id""", {"id": operator_id})
+            WHERE (h.manager_id IN (SELECT operator_id FROM manager_identities)
+                   OR h.leader_id IN (SELECT operator_id FROM manager_aliases))
+              AND h.operator_id NOT IN (SELECT operator_id FROM manager_aliases)
+              AND o.role <> 'admin'
+              AND o.status=1
+            UNION SELECT :scope_id""", {"scope_id": operator_id})
     elif role == "leader":
         rows = run_query("""SELECT DISTINCT h.operator_id AS id
             FROM org_hierarchy h JOIN operator o ON o.id=h.operator_id
-            WHERE h.leader_id=:id AND o.status=1
+            WHERE h.leader_id=:id AND o.status=1 AND o.role <> 'admin'
             UNION SELECT :id""", {"id": operator_id})
     else:
         rows = [{"id": operator_id}]
@@ -55,6 +68,7 @@ def visible_people(user: dict) -> list[dict]:
     placeholders = ",".join(f":p{i}" for i in range(len(ids)))
     return run_query(f"""SELECT o.id,o.real_name,
         COALESCE(NULLIF(TRIM(o.department),''),NULLIF(TRIM(p.department),''),MAX(h.dept)) department,
+        p.group_name,
         o.role
       FROM operator o
       LEFT JOIN (
@@ -62,15 +76,64 @@ def visible_people(user: dict) -> list[dict]:
           CASE WHEN INSTR(TRIM(bm),'部') > 0
             THEN CONCAT(SUBSTRING_INDEX(TRIM(bm),'部',1),'部')
             ELSE NULLIF(TRIM(bm),'')
-          END ORDER BY bm SEPARATOR '、') department
+          END ORDER BY bm SEPARATOR '、') department,
+          GROUP_CONCAT(DISTINCT NULLIF(TRIM(zm),'') ORDER BY zm SEPARATOR '、') group_name
         FROM dp_ry
-        WHERE bm IS NOT NULL AND TRIM(bm) <> ''
+        WHERE (bm IS NOT NULL AND TRIM(bm) <> '')
+           OR (zm IS NOT NULL AND TRIM(zm) <> '')
         GROUP BY yy
       ) p ON p.yy COLLATE utf8mb4_0900_ai_ci=o.real_name
       LEFT JOIN org_hierarchy h ON h.operator_id=o.id
-      WHERE o.id IN ({placeholders}) AND o.status=1
-      GROUP BY o.id,o.real_name,o.department,p.department,o.role
+      WHERE o.id IN ({placeholders}) AND o.status=1 AND o.role <> 'admin'
+      GROUP BY o.id,o.real_name,o.department,p.department,p.group_name,o.role
       ORDER BY o.real_name""", bind)
+
+
+def _split_multi(value: object) -> set[str]:
+    """把「A、B」这类顿号分隔的多值字段拆成集合；空值返回空集。
+
+    `dp_ry` 的部门/组别经 GROUP_CONCAT 聚合后可能是多值，
+    筛选时必须逐项比对，不能用等值匹配，否则「武汉一部、深圳一部」
+    这类人会漏掉。
+    """
+    if value is None:
+        return set()
+    text = str(value).strip()
+    if not text:
+        return set()
+    normalized = text.replace("，", "、")
+    return {part.strip() for part in normalized.split("、") if part.strip()}
+
+
+def filtered_operator_ids(
+    user: dict,
+    department: str | None = None,
+    group: str | None = None,
+) -> list[int]:
+    """在权限范围内按部门/组别收窄人员 id。
+
+    先以 `visible_operator_ids` 作为硬边界，再用 `visible_people` 的
+    部门/组别做二次筛选，因此筛选只能收窄、不会扩大可见范围。
+    日报列表与合规汇总共用本函数，保证两处口径一致。
+    """
+    ids = set(visible_operator_ids(user))
+    if not department and not group:
+        return sorted(ids)
+
+    matched = []
+    for person in visible_people(user):
+        try:
+            person_id = int(person["id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if person_id not in ids:
+            continue  # 双保险：visible_people 已按权限过滤，这里再守一次
+        if department and department not in _split_multi(person.get("department")):
+            continue
+        if group and group not in _split_multi(person.get("group_name")):
+            continue
+        matched.append(person_id)
+    return sorted(set(matched))
 
 
 def get_target(operator_id: int, target_month: str) -> dict | None:
@@ -148,7 +211,7 @@ def get_cumulative_sales(operator_id: int, report_date: date) -> dict:
         if period_start <= sales_date <= period_end:
             total += amount
 
-    total = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    total = (total * CUMULATIVE_SALES_FACTOR).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return {**base, "amount": total, "period_end": str(period_end),
             "data_as_of": str(source_latest), "status": "available"}
 
@@ -185,6 +248,14 @@ def save_report(user: dict, payload: dict) -> dict:
     return get_report(int(user["userId"]), str(payload["report_date"]))
 
 
+def update_sales_snapshot(operator_id: int, report_date: date, amount: Decimal) -> None:
+    run_execute(
+        """UPDATE daily_report SET monthly_sales=:amount
+           WHERE operator_id=:operator_id AND report_date=:report_date""",
+        {"amount": amount, "operator_id": operator_id, "report_date": report_date},
+    )
+
+
 def get_report(operator_id: int, report_date: str) -> dict | None:
     rows = run_query("""SELECT id,operator_id,report_date,monthly_sales cumulative_sales,actual_listings listing_count,
       optimized_products optimization_count,weekly_late_exceed weekly_delay_exceeded,violation_flag violation_triggered,
@@ -196,8 +267,15 @@ def get_report(operator_id: int, report_date: str) -> dict | None:
     return _decode_report(rows[0]) if rows else None
 
 
-def list_reports(user: dict, start_date: str, end_date: str, operator_id: int | None = None) -> list[dict]:
-    ids = visible_operator_ids(user)
+def list_reports(
+    user: dict,
+    start_date: str,
+    end_date: str,
+    operator_id: int | None = None,
+    department: str | None = None,
+    group: str | None = None,
+) -> list[dict]:
+    ids = filtered_operator_ids(user, department=department, group=group)
     if operator_id is not None:
         ids = [operator_id] if operator_id in ids else []
     if not ids:
@@ -226,15 +304,26 @@ def list_reports(user: dict, start_date: str, end_date: str, operator_id: int | 
         GROUP BY yy
       ) p ON p.yy COLLATE utf8mb4_0900_ai_ci=o.real_name
       LEFT JOIN target_monthly t ON t.operator_id=r.operator_id AND t.month=DATE_FORMAT(r.report_date,'%Y-%m')
-      WHERE r.operator_id IN ({placeholders}) AND r.report_date BETWEEN :start_date AND :end_date
+      WHERE r.operator_id IN ({placeholders}) AND o.role <> 'admin'
+        AND r.report_date BETWEEN :start_date AND :end_date
       GROUP BY r.id,o.real_name,o.department,p.department,t.sales_target
       ORDER BY r.report_date DESC,o.real_name""", {**bind,"start_date":start_date,"end_date":end_date})
     return [_decode_report(row) for row in rows]
 
 
-def compliance_overview(user: dict, start_date: str, end_date: str) -> dict:
-    """Return role-scoped compliance counts and names for management views."""
-    ids = visible_operator_ids(user)
+def compliance_overview(
+    user: dict,
+    start_date: str,
+    end_date: str,
+    department: str | None = None,
+    group: str | None = None,
+) -> dict:
+    """Return role-scoped compliance counts and names for management views.
+
+    与 list_reports 共用 filtered_operator_ids，确保指标卡片数字
+    与实际筛选出的日报表格口径一致。
+    """
+    ids = filtered_operator_ids(user, department=department, group=group)
     if not ids:
         return {"metrics": [], "start_date": start_date, "end_date": end_date}
     bind = {f"p{i}": value for i, value in enumerate(ids)}

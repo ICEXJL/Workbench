@@ -142,6 +142,14 @@ def daily_sales_sort_clause(sort_by: str, sort_order: str) -> str:
     return f"{primary} {direction}, {secondary} DESC, d.dpbh ASC"
 
 
+def daily_sales_range_sort_clause(sort_by: str, sort_order: str) -> str:
+    columns = {"xse": "xse", "dds": "dds"}
+    metric = sort_by if sort_by in columns else "xse"
+    secondary = "dds" if metric == "xse" else "xse"
+    direction = "ASC" if str(sort_order).lower() == "asc" else "DESC"
+    return f"{metric} {direction}, {secondary} DESC, dpbh ASC"
+
+
 def get_daily_sales(
     user: dict,
     target_date: str,
@@ -150,27 +158,66 @@ def get_daily_sales(
     page_size: int,
     sort_by: str = "xse",
     sort_order: str = "desc",
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict:
     scope_sql, scope_params = _scope_clause(user)
     store_sql = " AND d.dpbh=:store" if store else ""
     visibility = f"EXISTS (SELECT 1 FROM dp_ry p WHERE p.dpbh=d.dpbh{scope_sql})"
-    params = {**scope_params, "target_date": target_date, "store": store, "limit": page_size, "offset": (page - 1) * page_size}
-    order_clause = daily_sales_sort_clause(sort_by, sort_order)
-    items = run_query(
-        f"SELECT d.dpbh,d.dds,d.xse,d.ckh,d.rq FROM dny_data d WHERE d.rq=:target_date AND {visibility}{store_sql} ORDER BY {order_clause} LIMIT :limit OFFSET :offset",
-        params,
-    )
-    total = run_query(f"SELECT COUNT(*) total FROM dny_data d WHERE d.rq=:target_date AND {visibility}{store_sql}", params)[0]["total"]
+    range_start = start_date or target_date
+    range_end = end_date or target_date
+    range_sql = "d.rq BETWEEN :start_date AND :end_date"
+    params = {
+        **scope_params,
+        "target_date": target_date,
+        "start_date": range_start,
+        "end_date": range_end,
+        "store": store,
+        "limit": page_size,
+        "offset": (page - 1) * page_size,
+    }
+    is_range = range_start != range_end
+    if is_range:
+        order_clause = daily_sales_range_sort_clause(sort_by, sort_order)
+        items_sql = f"""
+            SELECT d.dpbh,
+                   COALESCE(SUM(CAST(NULLIF(TRIM(d.dds), '') AS DECIMAL(20,4))), 0) dds,
+                   ROUND(COALESCE(SUM(CAST(NULLIF(TRIM(d.xse), '') AS DECIMAL(20,4))), 0), 2) xse,
+                   GROUP_CONCAT(DISTINCT NULLIF(TRIM(d.ckh), '') ORDER BY d.ckh SEPARATOR '、') ckh,
+                   :start_date period_start,
+                   :end_date period_end
+            FROM dny_data d
+            WHERE {range_sql} AND {visibility}{store_sql}
+            GROUP BY d.dpbh
+            ORDER BY {order_clause}
+            LIMIT :limit OFFSET :offset
+        """
+        count_sql = f"SELECT COUNT(DISTINCT d.dpbh) total FROM dny_data d WHERE {range_sql} AND {visibility}{store_sql}"
+    else:
+        order_clause = daily_sales_sort_clause(sort_by, sort_order)
+        items_sql = f"SELECT d.dpbh,d.dds,d.xse,d.ckh,d.rq FROM dny_data d WHERE {range_sql} AND {visibility}{store_sql} ORDER BY {order_clause} LIMIT :limit OFFSET :offset"
+        count_sql = f"SELECT COUNT(*) total FROM dny_data d WHERE {range_sql} AND {visibility}{store_sql}"
+    items = run_query(items_sql, params)
+    total = run_query(count_sql, params)[0]["total"]
     summary = run_query(
-        f"SELECT COALESCE(SUM(d.dds),0) orders,ROUND(COALESCE(SUM(d.xse),0),2) sales,COUNT(DISTINCT d.dpbh) stores FROM dny_data d WHERE d.rq=:target_date AND {visibility}{store_sql}",
+        f"SELECT COALESCE(SUM(CAST(NULLIF(TRIM(d.dds), '') AS DECIMAL(20,4))),0) orders,ROUND(COALESCE(SUM(CAST(NULLIF(TRIM(d.xse), '') AS DECIMAL(20,4))),0),2) sales,COUNT(DISTINCT d.dpbh) stores FROM dny_data d WHERE {range_sql} AND {visibility}{store_sql}",
         params,
     )[0]
     stores = run_query(
-        f"SELECT DISTINCT d.dpbh FROM dny_data d WHERE d.rq=:target_date AND {visibility} ORDER BY d.dpbh",
+        f"SELECT DISTINCT d.dpbh FROM dny_data d WHERE {range_sql} AND {visibility} ORDER BY d.dpbh",
         params,
     )
     summary["aov"] = round(float(summary["sales"] or 0) / float(summary["orders"] or 1), 2) if summary["orders"] else 0
-    return {"items": items, "total": total, "page": page, "page_size": page_size, "summary": summary, "stores": [row["dpbh"] for row in stores]}
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "summary": summary,
+        "stores": [row["dpbh"] for row in stores],
+        "period_start": range_start,
+        "period_end": range_end,
+    }
 
 
 # ==================== 店铺人员销售情况表 ====================
@@ -211,6 +258,23 @@ def get_personnel_sales(user: dict, cxrq_str: str, department: str | None, group
     items = run_query(f"{select_sql} ORDER BY total_sales DESC,yy LIMIT :limit OFFSET :offset", params)
     options = run_query(f"SELECT DISTINCT p.jc,p.zm,p.yy FROM dp_ry p WHERE p.yy IS NOT NULL AND TRIM(p.yy)<>''{scope_sql} ORDER BY p.jc,p.zm,p.yy", scope_params)
     return {"items": items, "total": total, "page": page, "page_size": page_size, "options": options}
+
+
+def get_personnel_store_sales(user: dict, operator_name: str, target_date: str) -> dict:
+    """Return all stores owned by an operator for one day, including zero-sales stores."""
+    scope_sql, scope_params = _scope_clause(user, "p")
+    params = {**scope_params, "operator_name": operator_name, "target_date": target_date}
+    sql = f"""
+      SELECT p.dpbh,
+             COALESCE(SUM(d.dds), 0) AS total_orders,
+             ROUND(COALESCE(SUM(d.xse), 0), 2) AS total_sales
+      FROM dp_ry p
+      LEFT JOIN dny_data d ON d.dpbh=p.dpbh AND d.rq=:target_date
+      WHERE p.yy=:operator_name AND p.yy IS NOT NULL AND TRIM(p.yy)<>''{scope_sql}
+      GROUP BY p.dpbh
+      ORDER BY total_sales DESC, total_orders DESC, p.dpbh ASC
+    """
+    return {"operator": operator_name, "date": target_date, "items": run_query(sql, params)}
 
 
 # ==================== 7天数据统计：地区 ====================
@@ -299,3 +363,4 @@ def get_t1_warehouse_distribution(target_date: str) -> list[dict]:
 # ==================== 人员管理 ====================
 def get_personnel_management() -> list[dict]:
     return run_query("SELECT name, roles, apt FROM name_roles_apt")
+
