@@ -49,12 +49,15 @@ class DailyReportPayload(BaseModel):
     weekly_wrong_damage_links: int | None = Field(default=None, ge=0)
     stocking_audit_rate: Decimal = Field(ge=0, le=100)
     reverse_product_count: int = Field(ge=0)
+    # 上架链接 ID：质量与审核模块填写，可空；空字符串统一存为 NULL。
+    listing_link_id: str | None = Field(default=None, max_length=4000)
     # 该字段已由上涨/下滑数量自动汇总，兼容旧版客户端传 null。
     volatile_store_count: int | None = Field(default=None, ge=0)
     rising_shop_count: int = Field(default=0, ge=0)
     rising_shop_names: list[str] = Field(default_factory=list)
     falling_shop_count: int = Field(default=0, ge=0)
     falling_shop_names: list[str] = Field(default_factory=list)
+    attention_notes: str | None = None
     all_issues_resolved: bool
 
     @field_validator("rising_shop_names", "falling_shop_names", mode="before")

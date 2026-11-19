@@ -152,6 +152,7 @@ CREATE TABLE `daily_report` (
   `rising_shop_names` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
   `falling_shop_count` int NOT NULL DEFAULT '0',
   `falling_shop_names` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
+  `attention_notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci,
   `all_issues_resolved` tinyint NOT NULL DEFAULT '0' COMMENT '当天问题是否都解决',
   `submitted_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '提交时间',
   PRIMARY KEY (`id`) USING BTREE,

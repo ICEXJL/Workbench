@@ -56,6 +56,7 @@ def init_business_tables() -> None:
             ("rising_shop_names", "TEXT NULL AFTER rising_shop_count"),
             ("falling_shop_count", "INT NOT NULL DEFAULT 0 AFTER rising_shop_names"),
             ("falling_shop_names", "TEXT NULL AFTER falling_shop_count"),
+            ("attention_notes", "TEXT NULL AFTER falling_shop_names"),
         ):
             report_column_exists = conn.execute(text("""SELECT COUNT(*)
                 FROM information_schema.COLUMNS

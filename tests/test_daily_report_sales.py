@@ -330,9 +330,10 @@ class CumulativeSalesTests(unittest.TestCase):
         self.assertEqual(result["sales_summary"]["status"], "snapshot")
         get_cumulative_sales.assert_not_called()
 
+    @patch("routers.reports.report_service.get_report", return_value=None)
     @patch("routers.reports.report_service.save_report")
     @patch("routers.reports.report_service.get_cumulative_sales", side_effect=SQLAlchemyError("source unavailable"))
-    def test_sales_source_failure_is_deferred_until_after_submit(self, get_cumulative_sales, save_report):
+    def test_sales_source_failure_is_deferred_until_after_submit(self, get_cumulative_sales, save_report, _get_report):
         payload = DailyReportPayload(
             report_date=date.today(),
             listing_count=0,

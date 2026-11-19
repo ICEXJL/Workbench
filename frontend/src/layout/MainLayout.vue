@@ -108,7 +108,6 @@ const basePrimaryNav = [
   { key: 'daily', label: '经营总览', caption: '订单与销售明细', icon: icon('<path d="M4 13h6V4H4v9Zm10 7h6V11h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/>') },
   { key: 'personnel', label: '人员销售', caption: '团队与店铺表现', icon: icon('<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a5 5 0 0 1 10 0v2M16 4a3 3 0 0 1 0 6M16 13a5 5 0 0 1 5 5v2"/>') },
   { key: 'report-submit', label: '提交日报', caption: '每日运营数据填报', roles: ['operator','leader','manager'], icon: icon('<path d="M6 3h9l3 3v15H6z"/><path d="M9 12h6M9 16h6M14 3v4h4"/>') },
-  { key: 'report-list', label: '日报进度', caption: '团队提交与目标进度', icon: icon('<path d="M4 19V5M4 19h16M7 15l4-4 3 2 5-6"/>') },
   { key: 'stats7d', label: '趋势分析', caption: '近 7 天经营趋势', roles: ['admin'], icon: icon('<path d="M4 19V5M4 19h16M7 15l4-4 3 2 5-6"/>') },
   { key: 'statsdaily', label: '分布洞察', caption: '区域与仓库结构', roles: ['admin'], icon: icon('<path d="M12 3a9 9 0 1 0 9 9h-9V3Z"/><path d="M16 3.9A9 9 0 0 1 20.1 8H16V3.9Z"/>') },
 ]
@@ -116,6 +115,7 @@ const logisticsNav = [
   { key: 'logistics-search', label: '物流查询', caption: '库存与出货追踪', icon: icon('<path d="M4 6h16v12H4z"/><path d="M8 10h8M8 14h5"/>') },
 ]
 const baseSecondaryNav = [
+  { key: 'report-list', label: '日报进度', caption: '团队提交与目标进度', icon: icon('<path d="M4 19V5M4 19h16M7 15l4-4 3 2 5-6"/>') },
   { key: 'report-targets', label: '月度目标', caption: '配置销售与上架目标', roles: ['admin'], icon: icon('<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z"/><path d="M12 7v5l3 2"/>') },
   { key: 'manage', label: '人员目录', caption: '角色与部门信息', roles: ['admin'], icon: icon('<path d="M4 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM18 8v6M15 11h6"/>') }
 ]
@@ -124,7 +124,8 @@ const secondaryNav = computed(() => baseSecondaryNav.filter(item => !item.roles 
 const activeKey = computed(() => route.name || 'daily')
 const userInitial = computed(() => (authStore.realName || authStore.username || 'O').slice(0, 1).toUpperCase())
 const roleLabel = computed(() => ({admin:'管理端',manager:'主管',leader:'组长',operator:'运营'}[authStore.role] || '运营'))
-const currentSection = computed(() => activeKey.value === 'logistics-search' ? 'CROSS-BORDER' : (activeKey.value === 'manage' ? 'ORGANIZATION' : 'ANALYTICS'))
+const ORGANIZATION_PAGES = new Set(['manage', 'report-targets', 'report-list'])
+const currentSection = computed(() => activeKey.value === 'logistics-search' ? 'CROSS-BORDER' : (ORGANIZATION_PAGES.has(activeKey.value) ? 'ORGANIZATION' : 'ANALYTICS'))
 function go(key) { mobileNavOpen.value = false; router.push({ name: key }) }
 function refreshPage() { window.location.reload() }
 function logout() { authStore.logout(); router.push('/login') }

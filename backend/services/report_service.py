@@ -28,6 +28,7 @@ def _decode_shop_names(value: object) -> list[str]:
 
 def _decode_report(row: dict) -> dict:
     row = dict(row)
+    row.setdefault("attention_notes", None)
     row["rising_shop_names"] = _decode_shop_names(row.get("rising_shop_names"))
     row["falling_shop_names"] = _decode_shop_names(row.get("falling_shop_names"))
     return row
@@ -224,27 +225,32 @@ def save_target(payload: dict) -> None:
 
 def save_report(user: dict, payload: dict) -> dict:
     data = {**payload, "operator_id": int(user["userId"])}
+    data.setdefault("attention_notes", None)
+    # 上架链接 ID 为空字符串时统一存 NULL，避免出现 '' 与 NULL 两种"空"。
+    link_id = (data.get("listing_link_id") or "").strip()
+    data["listing_link_id"] = link_id or None
     data["volatile_store_count"] = data.get("rising_shop_count", 0) + data.get("falling_shop_count", 0)
     data["rising_shop_names_json"] = json.dumps(data.get("rising_shop_names", []), ensure_ascii=False)
     data["falling_shop_names_json"] = json.dumps(data.get("falling_shop_names", []), ensure_ascii=False)
     run_execute("""INSERT INTO daily_report
       (operator_id,report_date,monthly_sales,actual_listings,optimized_products,weekly_late_exceed,
        violation_flag,infringement_flag,weekly_badreview_links,weekly_misship_links,review_ontime_rate,
-       reverse_product_cnt,fluctuate_shop_cnt,rising_shop_count,rising_shop_names,
-       falling_shop_count,falling_shop_names,all_issues_resolved)
+       reverse_product_cnt,listing_link_id,fluctuate_shop_cnt,rising_shop_count,rising_shop_names,
+       falling_shop_count,falling_shop_names,attention_notes,all_issues_resolved)
       VALUES (:operator_id,:report_date,:cumulative_sales,:listing_count,:optimization_count,:weekly_delay_exceeded,
        :violation_triggered,:infringement_triggered,:weekly_bad_review_links,:weekly_wrong_damage_links,
-       :stocking_audit_rate,:reverse_product_count,:volatile_store_count,:rising_shop_count,:rising_shop_names_json,
-       :falling_shop_count,:falling_shop_names_json,:all_issues_resolved)
+       :stocking_audit_rate,:reverse_product_count,:listing_link_id,:volatile_store_count,:rising_shop_count,:rising_shop_names_json,
+       :falling_shop_count,:falling_shop_names_json,:attention_notes,:all_issues_resolved)
       ON DUPLICATE KEY UPDATE monthly_sales=VALUES(monthly_sales),actual_listings=VALUES(actual_listings),
        optimized_products=VALUES(optimized_products),weekly_late_exceed=VALUES(weekly_late_exceed),
        violation_flag=VALUES(violation_flag),infringement_flag=VALUES(infringement_flag),
        weekly_badreview_links=VALUES(weekly_badreview_links),weekly_misship_links=VALUES(weekly_misship_links),
        review_ontime_rate=VALUES(review_ontime_rate),reverse_product_cnt=VALUES(reverse_product_cnt),
+       listing_link_id=VALUES(listing_link_id),
        fluctuate_shop_cnt=VALUES(fluctuate_shop_cnt),rising_shop_count=VALUES(rising_shop_count),
        rising_shop_names=VALUES(rising_shop_names),falling_shop_count=VALUES(falling_shop_count),
        falling_shop_names=VALUES(falling_shop_names),all_issues_resolved=VALUES(all_issues_resolved),
-       submitted_at=CURRENT_TIMESTAMP""", data)
+       attention_notes=VALUES(attention_notes),submitted_at=CURRENT_TIMESTAMP""", data)
     return get_report(int(user["userId"]), str(payload["report_date"]))
 
 
@@ -261,9 +267,9 @@ def get_report(operator_id: int, report_date: str) -> dict | None:
       optimized_products optimization_count,weekly_late_exceed weekly_delay_exceeded,violation_flag violation_triggered,
       infringement_flag infringement_triggered,weekly_badreview_links weekly_bad_review_links,
       weekly_misship_links weekly_wrong_damage_links,review_ontime_rate stocking_audit_rate,
-      reverse_product_cnt reverse_product_count,fluctuate_shop_cnt volatile_store_count,
+      reverse_product_cnt reverse_product_count,listing_link_id,fluctuate_shop_cnt volatile_store_count,
       rising_shop_count,rising_shop_names,falling_shop_count,falling_shop_names,
-      all_issues_resolved,submitted_at FROM daily_report WHERE operator_id=:id AND report_date=:day""", {"id": operator_id, "day": report_date})
+      attention_notes,all_issues_resolved,submitted_at FROM daily_report WHERE operator_id=:id AND report_date=:day""", {"id": operator_id, "day": report_date})
     return _decode_report(rows[0]) if rows else None
 
 
@@ -287,9 +293,9 @@ def list_reports(
       r.report_date,r.monthly_sales cumulative_sales,r.actual_listings listing_count,r.optimized_products optimization_count,
       r.weekly_late_exceed weekly_delay_exceeded,r.violation_flag violation_triggered,r.infringement_flag infringement_triggered,
       r.weekly_badreview_links weekly_bad_review_links,r.weekly_misship_links weekly_wrong_damage_links,
-      r.review_ontime_rate stocking_audit_rate,r.reverse_product_cnt reverse_product_count,
+      r.review_ontime_rate stocking_audit_rate,r.reverse_product_cnt reverse_product_count,r.listing_link_id,
       r.fluctuate_shop_cnt volatile_store_count,r.rising_shop_count,r.rising_shop_names,
-      r.falling_shop_count,r.falling_shop_names,r.all_issues_resolved,r.submitted_at,t.sales_target,
+      r.falling_shop_count,r.falling_shop_names,r.attention_notes,r.all_issues_resolved,r.submitted_at,t.sales_target,
       CASE WHEN t.sales_target IS NULL OR t.sales_target=0 THEN NULL ELSE ROUND(r.monthly_sales/t.sales_target*100,2) END completion_rate
       FROM daily_report r JOIN operator o ON o.id=r.operator_id
       LEFT JOIN org_hierarchy h ON h.operator_id=r.operator_id
