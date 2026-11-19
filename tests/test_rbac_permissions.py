@@ -138,7 +138,8 @@ class TestSaveReportIdentityBinding(unittest.TestCase):
             captured.update(data)
             return data
 
-        with mock.patch.object(report_service, "run_execute", side_effect=fake_write):
+        with mock.patch.object(report_service, "run_execute", side_effect=fake_write), \
+             mock.patch.object(report_service, "get_report", return_value=None):
             report_service.save_report(
                 user("operator", 77, "victim"),
                 {"operator_id": 1, "listing_count": 3, "report_date": "2026-10-06"},

@@ -25,11 +25,14 @@
     <section class="data-panel">
       <div class="panel-head"><div><h3>店铺经营明细</h3><p>{{ total }} 条记录 · {{ sortDescription }} · 翻页加载</p></div><span class="live-tag"><i></i>LIVE DATA</span></div>
       <a-empty v-if="!loading && rows.length === 0" description="当前时间和店铺范围暂无数据" />
-      <a-table v-else :loading="loading" :data-source="rows" :columns="columns" :pagination="pagination" :scroll="{ x: 760 }" :row-key="rowKey" size="middle" @change="tableChanged">
+      <a-table v-else :loading="loading" :data-source="rows" :columns="columns" :pagination="pagination" :scroll="{ x: 1120 }" :row-key="rowKey" size="middle" @change="tableChanged">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'dpbh'"><span class="store-cell"><i :class="platformClass(record.dpbh)"></i>{{ record.dpbh }}</span></template>
+          <template v-else-if="column.key === 'yy'"><span class="owner-cell">{{ record.yy || '-' }}</span></template>
+          <template v-else-if="column.key === 'zm'"><span class="owner-cell">{{ record.zm || '-' }}</span></template>
           <template v-else-if="column.key === 'dds'"><strong class="number-cell">{{ formatInteger(record.dds) }}</strong></template>
           <template v-else-if="column.key === 'xse'"><strong class="sales-cell">$ {{ formatMoney(record.xse) }}</strong></template>
+          <template v-else-if="column.key === 'profit_rate'"><span class="profit-pending" title="日预估利润率暂无数据源，待接入">—</span></template>
           <template v-else-if="column.key === 'ckh'"><span class="warehouse-tag">{{ record.ckh || '未配置' }}</span></template>
         </template>
       </a-table>
@@ -61,8 +64,11 @@ const summary=ref({orders:0,sales:0,stores:0,aov:0})
 const pagination=computed(()=>({current:page.value,pageSize:pageSize.value,total:total.value,showSizeChanger:true,pageSizeOptions:['10','20','50'],showTotal:n=>`共 ${n} 条`}))
 const columns=computed(()=>[
   {title:'店铺代号',dataIndex:'dpbh',key:'dpbh',width:260},
+  {title:'运营',dataIndex:'yy',key:'yy',width:110},
+  {title:'运营上级',dataIndex:'zm',key:'zm',width:110},
   {title:'订单量',dataIndex:'dds',key:'dds',width:120,sorter:true,sortDirections:['descend','ascend'],sortOrder:sortBy.value==='dds'?(sortOrder.value==='desc'?'descend':'ascend'):null},
   {title:'销售额（USD）',dataIndex:'xse',key:'xse',width:150,sorter:true,sortDirections:['descend','ascend'],sortOrder:sortBy.value==='xse'?(sortOrder.value==='desc'?'descend':'ascend'):null},
+  {title:'日预估利润率',dataIndex:'profit_rate',key:'profit_rate',width:140},
   {title:'仓库',dataIndex:'ckh',key:'ckh',width:120},
   ...(isRange.value?[]:[{title:'日期',dataIndex:'rq',key:'rq',width:130}]),
 ])
@@ -96,6 +102,8 @@ onMounted(()=>showPage(1))
 .overview-page{display:flex;flex-direction:column;gap:18px}.control-strip{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding:5px 2px 7px}.eyebrow{margin:0 0 7px;color:#2f7df4;font-size:9px;font-weight:750;letter-spacing:.18em}.control-strip h2{margin:0;color:#17243f;font-size:23px;font-weight:650}.control-strip p:last-child{margin:6px 0 0;color:#7b89a1;font-size:12px}.filters{display:flex;align-items:center;gap:10px}.quick-ranges{display:flex;gap:4px}.store-select{width:240px}
 .metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid #dce5f2;border-radius:8px;background:#fff;overflow:hidden}.metric{display:flex;align-items:center;gap:15px;min-height:124px;padding:22px;border-right:1px solid #e4ebf4}.metric:last-child{border-right:0}.metric-icon{display:grid;width:40px;height:40px;flex:0 0 40px;place-items:center;border-radius:7px;color:#2f7df4;background:#edf5ff}.metric-icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-width:1.7}.metric div{display:flex;min-width:0;flex-direction:column}.metric p{margin:0 0 3px;color:#71809d;font-size:11px}.metric strong{overflow:hidden;color:#17243f;font-size:24px;font-weight:650;letter-spacing:0;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}.metric small{margin-top:4px;color:#a1adc0;font-size:9px}.metric.primary{background:#f7faff}.metric.primary strong{color:#1767df}
 .data-panel{border:1px solid #dce5f2;border-radius:8px;background:#fff;overflow:hidden}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 22px;border-bottom:1px solid #e5ebf4}.panel-head h3{margin:0;color:#17243f;font-size:15px}.panel-head p{margin:4px 0 0;color:#8b98ae;font-size:10px}.live-tag{display:flex;align-items:center;gap:7px;color:#68809f;font-size:9px;font-weight:700;letter-spacing:.1em}.live-tag i{width:7px;height:7px;border-radius:50%;background:#28b47a}.store-cell{display:flex;align-items:center;gap:9px;color:#35445f;font-weight:550}.store-cell i{width:7px;height:7px;border-radius:2px}.store-cell i.shopee{background:#ee6b4d}.store-cell i.lazada{background:#7457d5}.store-cell i.tiktok{background:#2c313f}.store-cell i.other{background:#7f91aa}.number-cell{color:#34435d;font-variant-numeric:tabular-nums}.sales-cell{color:#1767df;font-variant-numeric:tabular-nums}.warehouse-tag{display:inline-flex;padding:2px 8px;border-radius:4px;color:#59708f;background:#eef3f9;font-size:11px}
+.owner-cell{display:block;overflow:hidden;color:#4a5b78;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.profit-pending{color:#bcc7d8;font-variant-numeric:tabular-nums;cursor:help}
 :deep(.ant-table-wrapper .ant-table){color:#52617a;font-size:12px}:deep(.ant-table-wrapper .ant-table-thead>tr>th){color:#7f8ca2;background:#f7f9fc;font-size:10px;font-weight:650}:deep(.ant-table-wrapper .ant-table-tbody>tr>td){border-bottom-color:#edf1f6}:deep(.ant-pagination .ant-pagination-item-active){border-color:#2f7df4}:deep(.ant-pagination .ant-pagination-item-active a){color:#2f7df4}
 :deep(.ant-table-wrapper .ant-table-thead > tr > th.ant-table-column-sort){background:#f7f9fc!important}:deep(.ant-table-wrapper .ant-table-tbody > tr > td.ant-table-column-sort){background:#fff!important}
 @media(max-width:1100px){.metric-grid{grid-template-columns:repeat(2,1fr)}.metric:nth-child(2){border-right:0}.metric:nth-child(-n+2){border-bottom:1px solid #e4ebf4}}

@@ -177,10 +177,15 @@ def get_daily_sales(
         "offset": (page - 1) * page_size,
     }
     is_range = range_start != range_end
+    # 运营（dp_ry.yy）与运营上级（dp_ry.zm）：visibility 已保证 dpbh 在 dp_ry 中存在，
+    # 用标量子查询取一条，避免 JOIN 一对多放大行数。同一店铺多归属时取字典序最小的一条。
+    owner_cols = ("(SELECT MIN(p.yy) FROM dp_ry p WHERE p.dpbh=d.dpbh) yy,"
+                  "(SELECT MIN(p.zm) FROM dp_ry p WHERE p.dpbh=d.dpbh) zm")
     if is_range:
         order_clause = daily_sales_range_sort_clause(sort_by, sort_order)
         items_sql = f"""
             SELECT d.dpbh,
+                   {owner_cols},
                    COALESCE(SUM(CAST(NULLIF(TRIM(d.dds), '') AS DECIMAL(20,4))), 0) dds,
                    ROUND(COALESCE(SUM(CAST(NULLIF(TRIM(d.xse), '') AS DECIMAL(20,4))), 0), 2) xse,
                    GROUP_CONCAT(DISTINCT NULLIF(TRIM(d.ckh), '') ORDER BY d.ckh SEPARATOR '、') ckh,
@@ -195,7 +200,7 @@ def get_daily_sales(
         count_sql = f"SELECT COUNT(DISTINCT d.dpbh) total FROM dny_data d WHERE {range_sql} AND {visibility}{store_sql}"
     else:
         order_clause = daily_sales_sort_clause(sort_by, sort_order)
-        items_sql = f"SELECT d.dpbh,d.dds,d.xse,d.ckh,d.rq FROM dny_data d WHERE {range_sql} AND {visibility}{store_sql} ORDER BY {order_clause} LIMIT :limit OFFSET :offset"
+        items_sql = f"SELECT d.dpbh,{owner_cols},d.dds,d.xse,d.ckh,d.rq FROM dny_data d WHERE {range_sql} AND {visibility}{store_sql} ORDER BY {order_clause} LIMIT :limit OFFSET :offset"
         count_sql = f"SELECT COUNT(*) total FROM dny_data d WHERE {range_sql} AND {visibility}{store_sql}"
     items = run_query(items_sql, params)
     total = run_query(count_sql, params)[0]["total"]
@@ -251,13 +256,27 @@ def get_personnel_sales(user: dict, cxrq_str: str, department: str | None, group
       p.yy,MIN(p.rzsj) rzsj,
       GROUP_CONCAT(DISTINCT p.dpbh ORDER BY p.dpbh SEPARATOR '、') dpbh,
       GROUP_CONCAT(DISTINCT {platform_expression} ORDER BY {platform_expression} SEPARATOR '、') fl,
+      ROUND(COALESCE(SUM(d.xse),0) / 7, 2) avg_sales,
       {','.join(day_fields)},
       COALESCE(SUM(d.dds),0) total_orders,ROUND(COALESCE(SUM(d.xse),0),2) total_sales
       {from_sql} {where_sql} GROUP BY p.yy"""
     total = run_query(f"SELECT COUNT(DISTINCT p.yy) total {from_sql} {where_sql}", params)[0]["total"]
     items = run_query(f"{select_sql} ORDER BY total_sales DESC,yy LIMIT :limit OFFSET :offset", params)
+    summary_sql = f"""SELECT COALESCE(SUM(operator_orders),0) total_orders,
+      ROUND(COALESCE(SUM(operator_sales),0),2) total_sales
+      FROM (SELECT p.yy,SUM(d.dds) operator_orders,SUM(d.xse) operator_sales
+      {from_sql} {where_sql} GROUP BY p.yy) operator_totals"""
+    summary_params = {key: value for key, value in params.items() if key not in ("limit", "offset")}
+    summary_rows = run_query(summary_sql, summary_params)
     options = run_query(f"SELECT DISTINCT p.jc,p.zm,p.yy FROM dp_ry p WHERE p.yy IS NOT NULL AND TRIM(p.yy)<>''{scope_sql} ORDER BY p.jc,p.zm,p.yy", scope_params)
-    return {"items": items, "total": total, "page": page, "page_size": page_size, "options": options}
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "summary": summary_rows[0] if summary_rows else {"total_orders": 0, "total_sales": 0},
+        "options": options,
+    }
 
 
 def get_personnel_store_sales(user: dict, operator_name: str, target_date: str) -> dict:

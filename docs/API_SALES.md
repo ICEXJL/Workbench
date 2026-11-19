@@ -18,11 +18,13 @@
 
 - `items`：每名运营一条记录，聚合其名下店铺和平台；按 7 日 `total_sales` 从高到低排列。
 - `dd7` / `xs7` 至 `dd1` / `xs1`：表格按最近日期到最早日期展示；`dd7` / `xs7` 对应 `cxrq`，`dd1` / `xs1` 对应 `cxrq` 前第 6 天。
-- `total_orders` / `total_sales`：该运营查询区间的订单总数和销售额（USD）；`total_sales` 用于排序，页面不单独显示合计列。
+- `total_orders` / `total_sales`：该运营查询区间的订单总数和销售额（USD）；`total_sales` 用于排序。
+- `avg_sales`：该运营 7 天销售额除以 7，保留两位小数，显示在“平台”列右侧的“七日日均（USD）”列。
+- `summary.total_orders` / `summary.total_sales`：当前登录用户权限范围及部门/组别/运营筛选范围内，所有运营在 7 天窗口的订单数与销售额合计；不受分页影响。
 - `total`、`page`、`page_size`：运营人数及分页状态。
 - `options`：权限范围内可用的部门、组别和运营筛选项。
 
-`total_sales` 是当前运营名下各店铺账号的 7 日合计；不展示跨运营总额或个人合计列。
+`items` 的 `total_orders` / `total_sales` 是当前运营名下各店铺账号的 7 日合计；`summary` 是同一权限、筛选及日期条件下所有可见运营的整体合计。人员销售页保留原有逐日列，仅在表格底部固定展示整体汇总行。
 
 ## 人员销售自定义日期与店铺明细
 

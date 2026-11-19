@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | SPEC-001 | 角色、组织层级与数据可见范围 | draft | `backend/services/sales_service.py`、`report_service.py`、`org_hierarchy`、`dp_ry` |
 | SPEC-002 | 认证、首次改密与 Token 生命周期 | draft | `backend/routers/auth.py`、`denglu`、`frontend/src/stores/auth.js` |
-| SPEC-003 | 东南亚销售查询、分页与统计口径 | draft | `/api/v1/sales/*`、`dny_data`、`dp_ry`、销售页面；人员销售取基准日当天及前 6 天，按运营汇总账号数据并降序排名，不展示个人或跨运营合计列 |
+| SPEC-003 | 东南亚销售查询、分页与统计口径 | draft | `/api/v1/sales/*`、`dny_data`、`dp_ry`、销售页面；人员销售取基准日当天及前 6 天，按运营汇总账号数据并降序排名，底部整体汇总当前权限和筛选范围 |
 | SPEC-004 | 运营日报字段、周度规则与同日覆盖 | draft | `/api/v1/report/daily*`、`daily_report`、日报页面 |
 | SPEC-005 | 月度目标与完成率 | draft | `/api/v1/report/target`、`target_monthly`、日报/目标页面 |
 | SPEC-006 | 合规概览与异常指标 | draft | `/api/v1/report/compliance`、日报列表页面 |
@@ -25,3 +25,5 @@
 - `deprecated`：已被新 Spec 替代，保留替代关系和迁移说明。
 
 所有正式 Spec 应包含：目标与非目标、角色矩阵、数据口径、接口/字段、异常、数据库影响、Acceptance Criteria、测试和未确认项。历史 PRD、原型和验收清单应在 Spec 中作为来源引用，而不是自动成为实现契约。
+
+- SPEC-013：运营日报注意事项（implemented），见 [规格](SPEC-013-report-attention-notes.md)，覆盖字段、权限、条件展示及迁移回滚。

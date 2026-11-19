@@ -3,45 +3,61 @@
     <a-card :loading="loading">
       <a-space wrap>
         <a-date-picker v-model:value="cxrq" value-format="YYYY-MM-DD" @change="load" />
-        <a-select v-model:value="jc" style="width: 140px" placeholder="部门简称" @change="onJcChange">
-          <a-select-option value="全部">全部</a-select-option>
-          <a-select-option v-for="s in jcList" :key="s" :value="s">{{ s }}</a-select-option>
+        <a-select v-model:value="jc" style="width: 140px" placeholder="部门简称" show-search option-filter-prop="label" @change="onJcChange">
+          <a-select-option value="全部" label="全部">全部</a-select-option>
+          <a-select-option v-for="s in jcList" :key="s" :value="s" :label="s">{{ s }}</a-select-option>
         </a-select>
-        <a-select v-model:value="zm" style="width: 140px" placeholder="组别" @change="onZmChange">
-          <a-select-option value="全部">全部</a-select-option>
-          <a-select-option v-for="s in zmList" :key="s" :value="s">{{ s }}</a-select-option>
+        <a-select v-model:value="zm" style="width: 140px" placeholder="组别" show-search option-filter-prop="label" @change="onZmChange">
+          <a-select-option value="全部" label="全部">全部</a-select-option>
+          <a-select-option v-for="s in zmList" :key="s" :value="s" :label="s">{{ s }}</a-select-option>
         </a-select>
-        <a-select v-model:value="yy" style="width: 140px" placeholder="运营" @change="filtersChanged">
-          <a-select-option value="全部">全部</a-select-option>
-          <a-select-option v-for="s in yyList" :key="s" :value="s">{{ s }}</a-select-option>
+        <a-select v-model:value="yy" style="width: 140px" placeholder="运营" show-search option-filter-prop="label" @change="filtersChanged">
+          <a-select-option value="全部" label="全部">全部</a-select-option>
+          <a-select-option v-for="s in yyList" :key="s" :value="s" :label="s">{{ s }}</a-select-option>
         </a-select>
       </a-space>
       <a-divider />
-      <a-empty v-if="!loading && rows.length === 0" :description="`基准日期 ${cxrq} 无销售业绩数据`" />
       <a-table
-        v-else
         row-key="yy"
         :data-source="rows"
         :columns="columns"
         :pagination="pagination"
-        :scroll="{ x: 2100 }"
+        :scroll="{ x: 2235 }"
+        :locale="{ emptyText: `基准日期 ${cxrq} 无销售业绩数据` }"
         size="middle"
         bordered
         @change="tableChanged"
-      />
+      >
+        <template #summary>
+          <Table.Summary fixed="bottom">
+            <Table.Summary.Row class="personnel-summary-row">
+              <Table.Summary.Cell :index="0" :col-span="6">
+                <strong>汇总（全部运营）</strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell :index="6" :col-span="15">
+                <div class="personnel-summary-metrics">
+                  <span><strong>7天订单总数</strong>{{ formatInteger(summary.total_orders) }}</span>
+                  <span><strong>7天销售额</strong>{{ formatMoney(summary.total_sales) }}</span>
+                </div>
+              </Table.Summary.Cell>
+            </Table.Summary.Row>
+          </Table.Summary>
+        </template>
+      </a-table>
     </a-card>
   </div>
 </template>
 
 <script setup>
 import { computed, h, onMounted, ref } from 'vue'
-import { Popover } from 'ant-design-vue'
+import { Popover, Table } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { getPersonnelSales, getPersonnelStoreSales } from '@/services/api'
 
 const loading = ref(false)
 const cxrq = ref(dayjs().subtract(1, 'day').format('YYYY-MM-DD'))
 const rows = ref([])
+const summary = ref({ total_orders: 0, total_sales: 0 })
 const options = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -86,6 +102,7 @@ const columns = computed(() => {
     { title: '入职时间', dataIndex: 'rzsj', key: 'rzsj', width: 100 },
     { title: '店铺编号', dataIndex: 'dpbh', key: 'dpbh', width: 240, ellipsis: true },
     { title: '平台', dataIndex: 'fl', key: 'fl', width: 130, ellipsis: true },
+    { title: '七日日均（USD）', dataIndex: 'avg_sales', key: 'avg_sales', width: 135, align: 'right', customRender: ({ text }) => formatMoney(text) },
   ]
   const dayCols = []
   dayHeaders.value.forEach((h, idx) => {
@@ -145,7 +162,17 @@ async function handlePopoverOpen(open, operator, date, key) {
   if (!open && popoverState.value.locked) return
   if (!open) { popoverState.value = { ...popoverState.value, open: false }; return }
   popoverState.value = { key, operator, date, open: true, locked: false, loading: true, items: [] }
-  try { popoverState.value = { ...popoverState.value, loading: false, items: (await getPersonnelStoreSales(operator, date)).items || [] } } catch { popoverState.value = { ...popoverState.value, loading: false } }
+  // 鼠标快速划过多个单元格时，先发出的请求可能后返回。
+  // 必须校验 key 仍是当前目标，否则会把别人的店铺明细写到这一行上，
+  // 表现为「标题是甲、明细是乙的店」，占比也会和本行总额对不上。
+  try {
+    const data = await getPersonnelStoreSales(operator, date)
+    if (popoverState.value.key !== key) return
+    popoverState.value = { ...popoverState.value, loading: false, items: data.items || [] }
+  } catch {
+    if (popoverState.value.key !== key) return
+    popoverState.value = { ...popoverState.value, loading: false }
+  }
 }
 function lockPopover(operator, date, key) {
   if (popoverState.value.key === key && popoverState.value.locked) { closePopover(); return }
@@ -197,6 +224,7 @@ async function showPage(targetPage = 1, targetSize = pageSize.value) {
     pageSize.value = targetSize
     rows.value = data.items
     total.value = data.total
+    summary.value = data.summary || { total_orders: 0, total_sales: 0 }
     options.value = data.options
     prefetch(targetPage, targetSize, data.total)
   } finally {
@@ -325,4 +353,8 @@ onMounted(load)
 .sales-store-sales, .sales-store-share { color: #444; font-variant-numeric: tabular-nums; text-align: right; }
 .sales-store-share { color: #999; }
 .sales-popover-loading { padding: 28px 0; text-align: center; color: #999; }
+.personnel-summary-row { font-variant-numeric: tabular-nums; }
+.personnel-summary-row strong { color: #1677ff; }
+.personnel-summary-metrics { display: flex; justify-content: flex-start; gap: 32px; min-width: 260px; }
+.personnel-summary-metrics span { display: inline-flex; align-items: center; gap: 12px; white-space: nowrap; }
 </style>
