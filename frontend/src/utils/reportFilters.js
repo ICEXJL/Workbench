@@ -77,3 +77,19 @@ export function pickUnsubmittedNames(rows = []) {
 export function buildNameListText(names = []) {
   return names.filter(Boolean).join('，')
 }
+
+export function reportsWithAttentionNotes(rows = []) {
+  return rows.filter(row => row && row.submitted !== false && String(row.attention_notes ?? '').trim())
+}
+
+export function buildAttentionNotesCard(rows = []) {
+  const reports = reportsWithAttentionNotes(rows)
+  if (!reports.length) return null
+  const issueCount = new Set(reports.map(row => row.operator_id)).size
+  const total = new Set(rows.filter(row => row && row.submitted !== false).map(row => row.operator_id)).size
+  return {
+    key: 'attention_notes', label: '注意事项', issueCount, total,
+    ratio: total ? Math.round(issueCount / total * 100) : 0,
+    status: '有填写', statusClass: 'normal', issueLabel: '已填写',
+  }
+}

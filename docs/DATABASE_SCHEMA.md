@@ -126,6 +126,7 @@
 | `rising_shop_names` | `TEXT` | 是 | 无 | 上涨店铺名称；当前以 JSON 文本保存 |
 | `falling_shop_count` | `INT` | 否 | `0` | 下滑店铺数量 |
 | `falling_shop_names` | `TEXT` | 是 | 无 | 下滑店铺名称；当前以 JSON 文本保存 |
+| `attention_notes` | `TEXT` | 是 | `NULL` | 选填注意事项，多行纯文本，空值隐藏；2026-11-12 新增 |
 | `all_issues_resolved` | `TINYINT` | 否 | `0` | 当天问题是否都解决，通常 `0/1` |
 | `submitted_at` | `DATETIME` | 否 | 当前时间 | 日报提交/最后更新时刻 |
 
